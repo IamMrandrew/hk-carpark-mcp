@@ -1,53 +1,94 @@
-# Auth implementation review — NOT RELEASE APPROVED
+# Reviewing the Pocket ID bridge
 
-## Ownership and architecture
+This draft puts the implementation in front of the reviewer while the remaining problems are still visible. It is not ready to merge or use as a deployment guide.
 
-Grok cloud → HTTPS Cloudflare Named Tunnel → Home Mac loopback Python app.
-The app owns MCP resource `/mcp` and Bridge OAuth routes. Pocket ID runs as a separate loopback service.
-Private device management is independent (Tailscale/SSH).
+The main design question is the public/private split. The bridge currently blocks Pocket's management APIs, but still serves a UI that links to them. That mismatch explains why an administrator can reach a page and still be unable to use it.
 
-Two clients:
-1. Pocket confidential OIDC client named Carpark MCP: Bridge → Pocket; fixed `/auth/callback`; openid.
-2. Grok dynamically registered client: Grok → Bridge; fixed Grok callback; parking:read.
-Grok DCR clients do not appear in Pocket's client table. A Pocket app is the user-facing representation of its OIDC client. Pocket v2.17.0 treats authorized apps without a Launch URL as hidden apps; this does not disable authorization.
+## What runs where
 
-## Why the allowlist exists
+```text
+Grok cloud MCP client
+    |
+    | HTTPS through Cloudflare Named Tunnel
+    v
+Home Mac: Python app, listening on loopback
+    |-- OAuth bridge and grant ledger
+    |-- /mcp parking tools --> government parking API
+    |
+    `-- Pocket ID, running as a separate loopback service
+```
 
-The intended public surface was MCP, identity login and OAuth consent, NOT Pocket administration/setup/enrollment/recovery. Outer Host/Origin checks and an explicit method/path allowlist enforce that boundary.
-**Integration defect:** the complete native UI still exposes management links while `/api/users`, `/api/oidc/clients` and other admin APIs are denied. Admin role does not bypass this ingress boundary. A private management route or a deliberately reviewed public-admin design is needed; do not widen the entire API to silence errors.
-Read-only loopback probe: unauthenticated native `/api/oidc/clients` = 401; same request through Bridge = 404. This proves the API is blocked, not the exact frontend error/empty-state mechanism.
+Device management uses Tailscale/SSH separately from the public MCP connection.
 
-## OAuth / consent
+### The two client registrations
 
-Grok discovery+DCR → Bridge authorize (state, S256 PKCE, resource, parking:read) → Bridge consent → Pocket authorize with preconfigured client (separate upstream state/PKCE, openid) → passkey/native authorization → Bridge callback/code exchange → owner/client/current-grant validation → downstream authorization code → Grok token exchange → Bridge access+refresh tokens.
-Pocket tokens remain server-side. Bridge consent authorizes MCP capabilities; passkey authenticates identity. Native consent behavior follows Pocket policy.
+The bridge is an OIDC client of Pocket. Its preconfigured registration is named **Carpark MCP**, uses `/auth/callback`, and requests `openid`.
 
-## PKCE and client authentication
+Grok is an OAuth client of the bridge. It registers dynamically with the bridge, uses the fixed Grok callback and requests `parking:read`. That registration does not appear in Pocket's client table.
 
-PKCE is not a substitute for client authentication. Policy requires S256 challenge on downstream authorization. Observed Grok DCR metadata requested client_secret_post and omitted scope. Candidate accepts none or client_secret_post, and absent or parking:read registration scope. Token exchange and client authentication remain SDK-owned.
-Actual Grok PKCE/code exchange/automatic refresh acceptance is not established by this export. Registration alone is not proof of successful login.
+Pocket's My Apps page is a user-facing view of OIDC clients. In v2.17.0, authorized clients without a Launch URL appear under Hidden Apps. That label does not disable the client or its authorization.
 
-## Refresh / revoke
+## Why management APIs are blocked
 
-Explicit downstream refresh validates client/scope/live pointer, reserves old refresh in ledger, checks native current grant, performs upstream refresh, validates provenance, and records rotated downstream tokens. Replayed refresh revokes local family; failed/cancelled refresh fails closed. Normal refresh requires no fresh passkey ceremony.
-Local revoke is NOT implemented native Pocket upstream grant teardown. No native RFC7009 endpoint is invented.
+The public hostname was intended to provide MCP, sign-in and consent. It was not intended to expose Pocket administration, setup, passkey enrollment or recovery. The outer Host/Origin checks and the method/path allowlist enforce that split before requests reach Pocket.
 
-## Known code/UI defects to review
+I kept the complete Pocket UI available without providing a matching management route. That was an integration mistake: the UI offers actions that the proxy refuses. Being a Pocket administrator does not bypass the proxy.
 
-- Public native management UI and denied admin APIs are inconsistent.
-- Broad settings shell forwarding is not full settings acceptance.
-- `/api/users/me` hits the earlier PUBLIC_PATHS branch, making the later PUT rule unreachable.
-- PATCH/DELETE allowlist rules are not sufficient: catch-all router only admits GET/POST.
-- Reauthenticate/error method rules are overly broad; login/start permits POST although native defines GET.
-- Old policy comment says DCR admits only none; implementation also accepts client_secret_post.
-- DCR compatibility additions and dashboard routing need explicit regression coverage.
-- No browser-complete authenticated native UI/passkey/Grok acceptance suite.
-- No reproducible packaged production launcher/native lifecycle harness in this export.
-- Schema-pinned SQLite integration couples upgrades/restore to explicit approval and needs operational/WAL/least-privilege validation.
-- Full dependency/advisory/security review and native upstream teardown remain gaps.
+A read-only check confirmed the difference. Without a login cookie, `/api/oidc/clients` returns 401 directly from Pocket, but 404 through the bridge. The management API is blocked. This check does not establish exactly how the frontend turns that response into an empty list or an Internal Error.
 
-## Evidence / limits
+The next decision is whether to provide a private management entry point or explicitly support public administration. Opening every Pocket API just to remove UI errors would change the security boundary and needs a separate review.
 
-Working-tree run before publication: 275 passed, 1 skipped, 1 Authlib deprecation warning; ruff clean. These are primarily synthetic checks and do NOT establish production readiness. Native isolated scratch results are historical and not rerun by this export.
-Gzip fix strips content-encoding/length/transfer-encoding after decoded response buffering, avoiding double decompression. This does not establish all frontend assets/paths work.
-No merge or production change is authorized by this draft. Private runtime/keys/DBs/logs and local operational AGENTS are excluded.
+## Sign-in and consent
+
+The flow has two OAuth legs:
+
+1. Grok discovers the bridge endpoints and registers a client.
+2. The browser opens `/bridge/authorize` with state, an S256 PKCE challenge, the MCP resource and `parking:read`.
+3. The user approves the bridge consent request.
+4. The bridge starts Pocket authorization using its preconfigured client, `openid`, and separate upstream state and PKCE values.
+5. Pocket authenticates the user with a passkey and applies its own authorization/consent policy.
+6. Pocket sends a code to the bridge's `/auth/callback`. The bridge exchanges it for Pocket tokens and checks the owner, client and current grant.
+7. The bridge sends a downstream authorization code to Grok's callback.
+8. Grok exchanges that code, with its PKCE verifier, for bridge access and refresh tokens.
+
+Passkey sign-in establishes identity. Bridge consent approves the MCP capability. Pocket tokens remain on the server; Grok only gets bridge tokens.
+
+### PKCE and client authentication
+
+PKCE protects the authorization code exchange. Client authentication identifies the client at the token endpoint. A flow can use both.
+
+The observed Grok registration requested `client_secret_post` and omitted the registration scope. This candidate allows `none` or `client_secret_post`, and an absent scope or `parking:read`. Authorization still requires S256 PKCE. The SDK handles token exchange and client authentication.
+
+We have not verified Grok's complete code exchange or automatic refresh. Its registration request alone is not evidence that the whole flow works.
+
+## Refresh and revocation
+
+For an explicit refresh, the bridge checks the client, scope and live grant, then reserves the old refresh token in the ledger. It checks that the Pocket grant is still valid, refreshes upstream, verifies that the identity/client/grant binding has not changed, and records the new downstream tokens.
+
+Reusing an old refresh token revokes the local token family. A failed or cancelled refresh also denies further use and requires a reconnect. A normal refresh does not need another passkey sign-in.
+
+Local revocation stops the bridge grant. It does **not** currently tear down the upstream Pocket grant. Pocket has no native RFC7009 endpoint in this integration, and the bridge does not invent one.
+
+## Bugs visible in this draft
+
+The route policy needs more work:
+
+- Management links remain visible even though their APIs are blocked. Serving a settings page does not mean its actions work.
+- `/api/users/me` matches the earlier `PUBLIC_PATHS` branch, so the later PUT rule is unreachable.
+- The allowlist contains PATCH/DELETE rules, but the catch-all router only accepts GET/POST.
+- The reauthenticate/error rules accept too many methods. The login/start rule also permits POST even though Pocket defines GET.
+- A policy comment still says DCR accepts only `none`; the code also accepts `client_secret_post`.
+
+The DCR compatibility changes and settings routes need dedicated regression tests. We also need browser tests of the authenticated Pocket UI and passkey flow, followed by real Grok testing.
+
+Deployment and security work remains too. The repo does not include a reproducible production launcher or native lifecycle harness. The SQLite status check is tied to a specific release and schema, so upgrades and database restores need explicit approval. WAL visibility and least-privilege access still need operational testing. A full dependency/advisory review and upstream grant teardown are also unfinished.
+
+## What the checks establish
+
+The publication checkout passed **275 tests**, with **1 skipped** and **1 Authlib deprecation warning**. Ruff passed. The run used the existing pinned local virtual environment with this checkout's `src` on `PYTHONPATH`, rather than a fresh installation.
+
+Most tests use synthetic fixtures. They do not establish that the production passkey/Grok/Tesla flow works. Earlier isolated native runs are historical evidence and were not rerun for this export.
+
+The gzip fix removes content-encoding, content-length and transfer-encoding headers after buffering the decoded response. That avoids decoding the same body twice. It does not prove that every frontend asset or route works.
+
+This draft excludes private runtime files, keys, databases, logs, operational AGENTS and the production launcher. Publishing or editing the draft does not deploy it or authorize a merge.
