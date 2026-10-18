@@ -42,7 +42,7 @@ def test_custom_consent_keeps_native_post_checks(tmp_path, action, cookies, stat
             assert response.status_code == 302
             page = await http.get(response.headers['location'])
             assert page.status_code == 200
-            assert 'Connect Grok<br>to Carpark?' in page.text
+            assert 'Connect Grok<br>to Laporatory Carpark?' in page.text
             assert '<span>Carpark</span>' in page.text and 'prefers-color-scheme:dark' in page.text
             assert 'Application Access Request' not in page.text
             assert page.headers['x-frame-options'] == 'DENY'

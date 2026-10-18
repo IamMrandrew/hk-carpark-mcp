@@ -56,7 +56,7 @@ def render_consent(*, client_name, client_id, redirect_uri, scopes, txn_id, csrf
 <div class="app"><div class="icon" aria-hidden="true">{initial}</div><span>{safe_name}</span></div>
 <span class="arrow" aria-hidden="true">→</span>
 <div class="app"><div class="icon" aria-hidden="true">P</div><span>Carpark</span></div></div>
-<h1>Connect {safe_name}<br>to Carpark?</h1>
+<h1>Connect {safe_name}<br>to Laporatory Carpark?</h1>
 <p class="description">Find car parks and check live vacancies.</p>
 <div class="row"><span>Access</span><span class="muted">Read-only</span></div>
 <details><summary><span>Connection details</span><span class="right"><span class="host">{host}</span>
