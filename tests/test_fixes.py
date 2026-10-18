@@ -119,6 +119,10 @@ def downstream_client():
 async def seed_code(p,client,token):
     from fastmcp.server.auth.oauth_proxy.models import ClientCode
     now=time.time()
+    from tests.test_refresh_gate import seed_refresh_session
+    cfg=p._token_validator.config
+    seed_refresh_session(cfg.identity_database,cfg.allowed_sub,cfg.client_id,
+                         'SYNTHETIC-upstream-refresh','SYNTHETIC-native-grant')
     code=ClientCode(code='SYNTHETIC-code',client_id=client.client_id,redirect_uri=str(client.redirect_uris[0]),code_challenge='x'*43,code_challenge_method='S256',scopes=['parking:read'],idp_tokens={'access_token':token,'refresh_token':'SYNTHETIC-upstream-refresh','scope':'openid','expires_in':300},expires_at=now+300,created_at=now)
     await p._code_store.put(key=code.code,value=code,ttl=300)
     return await p.load_authorization_code(client,code.code)

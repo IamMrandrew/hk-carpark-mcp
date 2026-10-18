@@ -84,21 +84,31 @@ class NativeStatus:
             return json.loads(parameters)
 
     def refresh(self,token,expected):
+        return self.refresh_expiry(token,expected) is not None
+
+    def refresh_expiry(self,token,expected=None):
+        """Return the current native deadline after checking identity and grant state."""
+        if not isinstance(token,str) or not token or len(token)>16384:
+            return None
         with self.snapshot() as db:
-            if expected[:2]!=(self._config.allowed_sub,self._config.client_id) or not self.client_policy(db):
-                return False
+            if (expected is not None and expected[:2]!=(self._config.allowed_sub,self._config.client_id)
+                    or not self.client_policy(db)):
+                return None
             if db.execute('SELECT disabled FROM users WHERE id=?',(self._config.allowed_sub,)).fetchall()!=[(0,)]:
-                return False
+                return None
             # Pinned v2.17.0 binary stores oauth2_sessions.expires_at as INTEGER
             # Unix epoch seconds (verified on the publisher-verified fixture).
             # unixepoch() on a bare INTEGER treats it as a Julian day number and
             # returns NULL, which would silently drop every live refresh row.
             # TEXT timestamps (if ever written) still parse via unixepoch();
             # NULL/invalid values stay NULL and are filtered out (fail closed).
-            rows=db.execute("SELECT request_id,client_id,request_data FROM oauth2_sessions WHERE kind='refresh_token' AND key=? AND active=1 AND expires_at IS NOT NULL AND (CASE typeof(expires_at) WHEN 'integer' THEN expires_at ELSE unixepoch(expires_at) END)>unixepoch('now')",(token.rsplit('.',1)[-1],)).fetchall()
+            rows=db.execute("SELECT request_id,client_id,request_data,CASE typeof(expires_at) WHEN 'integer' THEN expires_at ELSE unixepoch(expires_at) END FROM oauth2_sessions WHERE kind='refresh_token' AND key=? AND active=1 AND expires_at IS NOT NULL AND (CASE typeof(expires_at) WHEN 'integer' THEN expires_at ELSE unixepoch(expires_at) END)>unixepoch('now')",(token.rsplit('.',1)[-1],)).fetchall()
             if len(rows)!=1:
-                return False
-            grant,client,raw=rows[0];data=json.loads(raw)
-            return (client==self._config.client_id and data.get('client_id')==client and data.get('id')==grant
+                return None
+            grant,client,raw,deadline=rows[0];data=json.loads(raw)
+            valid = (isinstance(grant,str) and bool(grant) and client==self._config.client_id
+                and data.get('client_id')==client and data.get('id')==grant
                 and data.get('session',{}).get('subject')==self._config.allowed_sub
-                and data.get('granted_scope')==['openid'] and hashlib.sha256(grant.encode()).hexdigest()==expected[2])
+                and data.get('granted_scope')==['openid']
+                and (expected is None or hashlib.sha256(grant.encode()).hexdigest()==expected[2]))
+            return deadline if valid else None

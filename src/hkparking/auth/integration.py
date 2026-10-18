@@ -166,7 +166,38 @@ class NativeTokenStore:
         return await self.store.delete(key=key)
 
 
+class PocketOAuthClient(AsyncOAuth2Client):
+    """Supply the native refresh deadline omitted by Pocket's token response."""
+    def __init__(self,*,normalize_tokens,**kwargs):
+        self.normalize_tokens=normalize_tokens
+        super().__init__(**kwargs)
+
+    async def fetch_token(self,*args,**kwargs):
+        return self.normalize_tokens(await super().fetch_token(*args,**kwargs))
+
+    async def refresh_token(self,*args,**kwargs):
+        return self.normalize_tokens(await super().refresh_token(*args,**kwargs))
+
+
 class PocketBridge(Bridge):
+    def normalize_native_tokens(self,tokens):
+        from mcp.server.auth.provider import TokenError
+        tokens=dict(tokens)
+        if not tokens.get('refresh_token'):
+            return tokens
+        try:
+            deadline=self._token_validator.status.refresh_expiry(tokens['refresh_token'])
+            remaining=int(deadline-time.time()) if deadline is not None else 0
+            # Honor a shorter explicit issuer lifetime as well as the native deadline.
+            declared=int(tokens.get('refresh_expires_in',remaining))
+            remaining=min(remaining,declared)
+            if remaining<=0:
+                raise ValueError('Native refresh grant unavailable')
+            tokens['refresh_expires_in']=remaining
+            return tokens
+        except (OSError,ValueError,TypeError,KeyError,sqlite3.Error):
+            raise TokenError('invalid_grant','Native refresh grant unavailable') from None
+
     async def _handle_idp_callback(self,request):
         if request.query_params.get('error'):
             return Response('Authorization failed; reconnect required',status_code=400,headers={'Cache-Control':'no-store'})
@@ -235,6 +266,16 @@ class PocketBridge(Bridge):
 
     async def exchange_authorization_code(self,client,authorization_code):
         try:
+            # Consent/code delivery can take time. Recompute immediately before
+            # the SDK derives JWT/storage TTLs rather than extending a stale TTL.
+            code=await self._code_store.get(key=authorization_code.code)
+            if code is not None:
+                code.idp_tokens=self.normalize_native_tokens(code.idp_tokens)
+                ttl=int(code.expires_at-time.time())
+                if ttl<=0:
+                    from mcp.server.auth.provider import TokenError
+                    raise TokenError('invalid_grant','Code is unavailable')
+                await self._code_store.put(key=code.code,value=code,ttl=ttl)
             return await self._issue_guard(lambda:super(PocketBridge,self).exchange_authorization_code(client,authorization_code))
         finally:
             await self._code_store.delete(key=authorization_code.code)
@@ -255,7 +296,7 @@ class PocketBridge(Bridge):
         return SCOPE.copy()
 
     def _create_upstream_oauth_client(self):
-        return AsyncOAuth2Client(client_id=self._upstream_client_id,
+        return PocketOAuthClient(normalize_tokens=self.normalize_native_tokens,client_id=self._upstream_client_id,
             client_secret=self._upstream_client_secret.get_secret_value(),
             token_endpoint_auth_method='client_secret_basic', transport=self.pocket_transport,
             timeout=5,trust_env=False,follow_redirects=False)

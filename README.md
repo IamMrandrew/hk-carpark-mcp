@@ -25,6 +25,23 @@ There are two client registrations. The bridge has a preconfigured OIDC client i
 
 [AUTH-REVIEW.md](AUTH-REVIEW.md) explains consent, refresh and the public route policy. It also lists the bugs that need fixing before this draft is ready to merge.
 
+### Refresh lifetime
+
+Bridge access tokens last five minutes. Clients renew them with a rotating refresh token; this should not require another passkey sign-in while the Pocket grant remains valid.
+
+Pocket v2.17.0 does not include `refresh_expires_in` in its token response. The bridge now reads the matching active session's expiry from the pinned native database instead of imposing a one-hour fallback. It checks the owner, client, scope, active state and deadline. It also honors a shorter explicit issuer lifetime and rechecks the deadline when the authorization code is exchanged. The home Mac's current Pocket client permits 30-day refresh sessions.
+
+Expired tokens issued before this fix cannot be revived. Reconnect once to obtain the corrected lifetime. Revocation, replay, upstream expiry and an ambiguous refresh failure can still require sign-in.
+
+An optional native lifecycle test uses a checksum-pinned Mac binary and a disposable synthetic Pocket identity. It tests code/PKCE/consent, access expiry, refresh rotation, bridge restart, MCP and revocation; it does not use production credentials or verify a real Grok session:
+
+```sh
+POCKET_TEST_BINARY=/Users/lihome/.local/lib/hk-carpark-mcp/bin/pocket-id-v2.17.0 \
+  uv run pytest -q -s tests/test_native_refresh_lifecycle.py
+```
+
+Set `CARPARK_TEST_LIVE_GOVERNMENT=1` to include the real government API. See [DEPLOYMENT-REFRESH.md](DEPLOYMENT-REFRESH.md) for the deployed files and rollback.
+
 ## Where to review the code
 
 - `src/hkparking/auth/integration.py` connects to Pocket, checks identity and decides which Pocket routes are reachable through the public hostname.

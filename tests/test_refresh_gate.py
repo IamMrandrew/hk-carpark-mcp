@@ -21,7 +21,7 @@ def seed_refresh_session(path, sub, client, signature, grant, *, expires_in=3600
             "INSERT INTO oauth2_sessions(id,created_at,kind,key,request_id,client_id,"
             "access_token_signature,active,request_data,expires_at) "
             "VALUES(?,CURRENT_TIMESTAMP,'refresh_token',?,?,?,'',1,?,?)",
-            ('SYNTHETIC-refresh-session-' + grant, signature, grant, client,
+            ('SYNTHETIC-refresh-session-' + grant + '-' + signature, signature, grant, client,
              json.dumps(data), int(time.time()) + expires_in))
 
 

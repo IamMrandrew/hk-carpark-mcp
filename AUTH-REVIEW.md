@@ -67,6 +67,8 @@ For an explicit refresh, the bridge checks the client, scope and live grant, the
 
 Reusing an old refresh token revokes the local token family. A failed or cancelled refresh also denies further use and requires a reconnect. A normal refresh does not need another passkey sign-in.
 
+The 2026-10-18 refresh fix removes a lifetime mismatch. Pocket's native session can remain valid for 30 days, but its token response omits `refresh_expires_in`; the bridge previously substituted one hour and carried that deadline through rotations. `PocketOAuthClient` now supplies the verified native session lifetime to OAuthProxy. The code exchange rechecks the native deadline after any delivery delay. A shorter explicit issuer lifetime is preserved. This does not extend the actual native grant or relax its owner/client/scope, expiry, rotation or revocation checks. Already-expired downstream tokens require one reconnect.
+
 Local revocation stops the bridge grant. It does **not** currently tear down the upstream Pocket grant. Pocket has no native RFC7009 endpoint in this integration, and the bridge does not invent one.
 
 ## Bugs visible in this draft
