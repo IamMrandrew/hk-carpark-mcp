@@ -19,7 +19,7 @@ The fix reads the matching active native session's expiry through the existing p
 - Real Pocket v2.17.0 test passed on the Mac using fresh temporary synthetic identities. It verified about 2,591,999 seconds of refresh lifetime, four rotations, expired-access recovery, bridge restart recovery, MCP tools and revocation.
 - The same test passed against the actual deployed flat modules and production parking module, with a live government query returning 21 Tsuen Wan car parks. The temporary native process and identity/token state were removed.
 - Public OAuth metadata returned 200 through the existing Cloudflare hostname. Anonymous MCP returned 401. No credentials or production identities were copied to the development checkout.
-- Existing Grok tokens had already expired. The user must reconnect once. A fresh real-client login and an overnight soak remain separate checks; native fixture results do not establish either.
+- Existing Grok tokens had already expired and were not revived. After one reconnect, the user completed a parking query; aggregate live state recorded real refresh rotation and about 30 days remaining on its replacement refresh token. Overnight persistence remains pending. Native fixture results are separate evidence.
 
 To repeat the isolated test on the Mac from the staging directory:
 

@@ -1,6 +1,6 @@
 # Reviewing the Pocket ID bridge
 
-This draft puts the implementation in front of the reviewer while the remaining problems are still visible. It is not ready to merge or use as a deployment guide.
+This review includes the deployed 2026-10-18 OAuth refresh fix, parking tools and sign-in styling. The personal deployment works in the tested scenarios; known hardening and deployment-reproducibility gaps remain below. Review publication is not merge approval.
 
 The main design question is the public/private split. The bridge currently blocks Pocket's management APIs, but still serves a UI that links to them. That mismatch explains why an administrator can reach a page and still be unable to use it.
 
@@ -59,7 +59,7 @@ PKCE protects the authorization code exchange. Client authentication identifies 
 
 The observed Grok registration requested `client_secret_post` and omitted the registration scope. This candidate allows `none` or `client_secret_post`, and an absent scope or `parking:read`. Authorization still requires S256 PKCE. The SDK handles token exchange and client authentication.
 
-We have not verified Grok's complete code exchange or automatic refresh. Its registration request alone is not evidence that the whole flow works.
+On 2026-10-18 the user reconnected Grok and completed a parking query. A read-only aggregate live-state check showed a spent refresh pointer, an active replacement with about 30 days remaining, and new access tokens. This establishes real-client refresh rotation, separately from the synthetic native tests. Overnight and longer-term persistence are not yet established.
 
 ## Refresh and revocation
 
@@ -81,11 +81,20 @@ The route policy needs more work:
 - The reauthenticate/error rules accept too many methods. The login/start rule also permits POST even though Pocket defines GET.
 - A policy comment still says DCR accepts only `none`; the code also accepts `client_secret_post`.
 
-The DCR compatibility changes and settings routes need dedicated regression tests. We also need browser tests of the authenticated Pocket UI and passkey flow, followed by real Grok testing.
+The DCR compatibility changes and settings routes need dedicated regression tests. Broader authenticated Pocket management UI coverage remains open. Real Grok sign-in/use and a live refresh rotation are now verified as described above; this does not prove every Grok/Tesla client scenario.
 
-Deployment and security work remains too. The repo does not include a reproducible production launcher or native lifecycle harness. The SQLite status check is tied to a specific release and schema, so upgrades and database restores need explicit approval. WAL visibility and least-privilege access still need operational testing. A full dependency/advisory review and upstream grant teardown are also unfinished.
+Deployment and security work remains too. The repo does not include a reproducible production launcher. The native lifecycle harness is now included in tests/test_native_refresh_lifecycle.py; its pinned Pocket binary remains an external prerequisite. The SQLite status check is tied to a specific release and schema, so upgrades and database restores need explicit approval. WAL visibility and least-privilege access still need operational testing. A full dependency/advisory review and upstream grant teardown are also unfinished.
 
-## What the checks establish
+## Current verification — 2026-10-18
+
+- Local suite: **291 passed, 2 skipped**; Ruff passed. Skips are the absent older legacy harness and the opt-in pinned native test, which ran separately on the Mac.
+- Real Pocket v2.17.0 lifecycle on disposable synthetic identities passed against staged and actual deployed modules: native sign-in/code exchange, four rotations, expired-access recovery, bridge restart, MCP and revocation. With the government API enabled, the deployed code returned 21 Tsuen Wan car parks.
+- Public OAuth metadata returned 200 and anonymous MCP returned 401. Existing production token state was retained across deployments.
+- The minimal consent page keeps SDK transaction/CSRF/browser-binding checks. Real-browser testing reproduced Origin:null under no-referrer and verified the fix using strict-origin; null/foreign origins remain denied.
+- Live Pocket login was visually checked at mobile width after removing the custom mountain image and adding system-font styling. Native CSP/nonces/cookies remain unchanged. This is presentation verification, not a new manual passkey login on that browser.
+- Overnight persistence, broader Tesla-specific behaviour and the hardening gaps above remain outside these checks.
+
+## Earlier publication snapshot (historical)
 
 The publication checkout passed **275 tests**, with **1 skipped** and **1 Authlib deprecation warning**. Ruff passed. The run used the existing pinned local virtual environment with this checkout's `src` on `PYTHONPATH`, rather than a fresh installation.
 
