@@ -11,6 +11,7 @@ from fastmcp.server.auth import TokenVerifier
 from mcp.server.auth.provider import AccessToken
 
 from .bridge import PUBLIC, RESOURCE, SCOPE
+from .consent import render_consent
 from .native_status import RELEASE, NativeStatus
 
 __all__ = ['RELEASE', 'NativeStatus', 'PocketConfig', 'PocketVerifier', 'build_integration']
@@ -180,6 +181,25 @@ class PocketOAuthClient(AsyncOAuth2Client):
 
 
 class PocketBridge(Bridge):
+    async def _show_consent_page(self, request):
+        # Let FastMCP validate the request, issue CSRF state and set its cookies.
+        response = await super()._show_consent_page(request)
+        if response.status_code != 200:
+            return response
+        txn_id = request.query_params.get('txn_id')
+        txn = await self._transaction_store.get(key=txn_id)
+        if txn is None or not txn.csrf_token:
+            return response
+        client = await self.get_client(txn.client_id)
+        response.body = render_consent(
+            client_name=getattr(client, 'client_name', None), client_id=txn.client_id,
+            redirect_uri=txn.client_redirect_uri, scopes=txn.scopes or [],
+            txn_id=txn_id, csrf_token=txn.csrf_token).encode('utf-8')
+        response.headers['content-length'] = str(len(response.body))
+        response.headers['cache-control'] = 'no-store'
+        response.headers['referrer-policy'] = 'no-referrer'
+        return response
+
     def normalize_native_tokens(self,tokens):
         from mcp.server.auth.provider import TokenError
         tokens=dict(tokens)
