@@ -10,6 +10,7 @@ import jwt
 from fastmcp.server.auth import TokenVerifier
 from mcp.server.auth.provider import AccessToken
 
+from .appearance import style_sign_in
 from .bridge import PUBLIC, RESOURCE, SCOPE
 from .consent import render_consent
 from .native_status import RELEASE, NativeStatus
@@ -433,8 +434,12 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
             return Response(status_code=408)
         headers=[(k,v) for k,v in request.headers.raw if k.lower() in {b'content-type',b'cookie',b'origin',b'accept'}]
         r=await http.request(request.method,PUBLIC+path+('?' + request.url.query if request.url.query else ''),content=bytes(body),headers=headers)
-        response=Response(r.content,status_code=r.status_code)
-        response.raw_headers=[(k,v) for k,v in r.headers.raw if k.lower() not in {b'connection',b'transfer-encoding',b'content-length',b'content-encoding'}]
+        content = style_sign_in(path, r.headers.get('content-type', ''), r.content)
+        response=Response(content,status_code=r.status_code)
+        excluded = {b'connection', b'transfer-encoding', b'content-length', b'content-encoding'}
+        if content != r.content:
+            excluded |= {b'etag', b'last-modified'}
+        response.raw_headers=[(k,v) for k,v in r.headers.raw if k.lower() not in excluded]
         return response
 
     app.router.routes.append(Route('/{rest:path}',pocket,methods=['GET','POST']))
