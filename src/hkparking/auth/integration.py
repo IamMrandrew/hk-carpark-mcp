@@ -197,7 +197,7 @@ class PocketBridge(Bridge):
             txn_id=txn_id, csrf_token=txn.csrf_token).encode('utf-8')
         response.headers['content-length'] = str(len(response.body))
         response.headers['cache-control'] = 'no-store'
-        response.headers['referrer-policy'] = 'no-referrer'
+        response.headers['referrer-policy'] = 'strict-origin'
         return response
 
     def normalize_native_tokens(self,tokens):

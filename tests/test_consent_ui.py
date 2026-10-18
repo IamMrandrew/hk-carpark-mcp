@@ -43,16 +43,19 @@ def test_custom_consent_keeps_native_post_checks(tmp_path, action, cookies, stat
             page = await http.get(response.headers['location'])
             assert page.status_code == 200
             assert 'Connect Grok<br>to Carpark?' in page.text
-            assert 'Laporatory Carpark' in page.text and 'prefers-color-scheme:dark' in page.text
+            assert '<span>Carpark</span>' in page.text and 'prefers-color-scheme:dark' in page.text
             assert 'Application Access Request' not in page.text
             assert page.headers['x-frame-options'] == 'DENY'
             assert page.headers['cache-control'] == 'no-store'
+            assert page.headers['referrer-policy'] == 'strict-origin'
             assert int(page.headers['content-length']) == len(page.content)
             fields = {name: html.unescape(value) for name, value in
                       re.findall(r'name="([^"]+)" value="([^"]*)"', page.text)}
             if not cookies:
                 http.cookies.clear()
-            response = await http.post('/consent', data={**fields, 'action': action})
+            bad_origin = await http.post('/consent', headers={'Origin': 'null'}, data={**fields, 'action': action})
+            assert bad_origin.status_code == 403 and bad_origin.text == 'Invalid Origin header'
+            response = await http.post('/consent', headers={'Origin': PUBLIC}, data={**fields, 'action': action})
             assert response.status_code == status
             if status == 302:
                 location = response.headers['location']

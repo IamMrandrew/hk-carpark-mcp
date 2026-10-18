@@ -10,12 +10,12 @@ STYLE = """
 padding:40px 28px 24px;background:var(--bg);border:1px solid var(--line);border-radius:24px}
 .connection{display:grid;grid-template-columns:56px 20px 56px;grid-template-rows:56px auto;
 column-gap:16px;row-gap:8px;align-items:center;justify-items:center;width:max-content;
-padding-right:28px;margin:0 auto 28px}.app{display:contents}.icon{width:56px;height:56px;
+margin:0 auto 28px}.app{display:contents}.icon{width:56px;height:56px;
 display:grid;place-items:center;background:var(--soft);border-radius:15px;font-size:30px;font-weight:600;
 grid-row:1}.app:first-child .icon,.app:first-child span{grid-column:1}
 .app:last-child .icon,.app:last-child span{grid-column:3}.app span{grid-row:2;align-self:start;
 font-size:12px;font-weight:500;color:var(--secondary);text-align:center;line-height:1.4;
-max-width:100%;overflow-wrap:anywhere}.app:last-child span{width:112px;max-width:none}
+max-width:100%;overflow-wrap:anywhere}
 .arrow{grid-column:2;grid-row:1;display:grid;place-items:center;height:56px;font-size:22px;
 line-height:1;color:var(--secondary)}h1{font-size:27px;font-weight:600;letter-spacing:-.8px;
 line-height:1.18;text-align:left;margin:0 0 14px;overflow-wrap:anywhere}
@@ -52,10 +52,10 @@ def render_consent(*, client_name, client_id, redirect_uri, scopes, txn_id, csrf
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'">
 <title>Connect to Carpark</title><style>{STYLE}</style></head><body><main class="content">
-<div class="connection" aria-label="{safe_name} to Laporatory Carpark">
+<div class="connection" aria-label="{safe_name} to Carpark">
 <div class="app"><div class="icon" aria-hidden="true">{initial}</div><span>{safe_name}</span></div>
 <span class="arrow" aria-hidden="true">→</span>
-<div class="app"><div class="icon" aria-hidden="true">P</div><span>Laporatory Carpark</span></div></div>
+<div class="app"><div class="icon" aria-hidden="true">P</div><span>Carpark</span></div></div>
 <h1>Connect {safe_name}<br>to Carpark?</h1>
 <p class="description">Find car parks and check live vacancies.</p>
 <div class="row"><span>Access</span><span class="muted">Read-only</span></div>
