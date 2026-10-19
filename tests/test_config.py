@@ -10,8 +10,8 @@ def test_production_configuration_keeps_public_resource_and_loopback_binding():
     from hkparking.config import ServerConfig
 
     config = ServerConfig(issuer_url="https://auth.example.test")
-    assert config.public_origin == "https://carpark.laporatory.com"
-    assert config.resource_url == "https://carpark.laporatory.com/mcp"
+    assert config.public_origin == "https://carpark.example.test"
+    assert config.resource_url == "https://carpark.example.test/mcp"
     assert config.listen_host == "127.0.0.1"
     assert config.listen_port == 8767
 

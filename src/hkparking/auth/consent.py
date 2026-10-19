@@ -2,6 +2,8 @@
 from html import escape
 from urllib.parse import urlsplit
 
+from hkparking.deployment import SETTINGS
+
 STYLE = """
 :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;
 --bg:#fff;--fg:#1d1d1f;--secondary:#636366;--line:#e5e5ea;--soft:#f5f5f7;
@@ -48,15 +50,18 @@ def render_consent(*, client_name, client_id, redirect_uri, scopes, txn_id, csrf
     initial = escape(name[:1].upper())
     host = escape(urlsplit(redirect_uri).netloc)
     permission = escape(', '.join(scopes))
+    display_name = escape(SETTINGS.display_name)
+    short_name = escape(SETTINGS.short_name)
+    server_initial = escape(SETTINGS.icon_text)
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'">
-<title>Connect to Carpark</title><style>{STYLE}</style></head><body><main class="content">
-<div class="connection" aria-label="{safe_name} to Carpark">
+<title>Connect to {display_name}</title><style>{STYLE}</style></head><body><main class="content">
+<div class="connection" aria-label="{safe_name} to {display_name}">
 <div class="app"><div class="icon" aria-hidden="true">{initial}</div><span>{safe_name}</span></div>
 <span class="arrow" aria-hidden="true">→</span>
-<div class="app"><div class="icon" aria-hidden="true">P</div><span>Carpark</span></div></div>
-<h1>Connect {safe_name}<br>to Laporatory Carpark?</h1>
+<div class="app"><div class="icon" aria-hidden="true">{server_initial}</div><span>{short_name}</span></div></div>
+<h1>Connect {safe_name}<br>to {display_name}?</h1>
 <p class="description">Find car parks and check live vacancies.</p>
 <div class="row"><span>Access</span><span class="muted">Read-only</span></div>
 <details><summary><span>Connection details</span><span class="right"><span class="host">{host}</span>

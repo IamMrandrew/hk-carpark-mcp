@@ -16,6 +16,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .client import GovernmentClient
 from .config import ServerConfig
+from .deployment import SETTINGS
 from .service import ParkingService
 from .tools import register_tools
 
@@ -55,7 +56,7 @@ def build_app(
     public_host = urlsplit(config.public_origin).netloc
     http = httpx.AsyncClient(transport=upstream_transport, follow_redirects=False, trust_env=False)
     mcp = FastMCP(
-        "Hong Kong Government Parking",
+        SETTINGS.display_name,
         host=config.listen_host,
         port=config.listen_port,
         stateless_http=True,

@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-PUBLIC = 'https://carpark.laporatory.com'
+PUBLIC = 'https://carpark.example.test'
 from tests.synthetic_support import binding, identity_db
 
 

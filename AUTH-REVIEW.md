@@ -83,9 +83,22 @@ The route policy needs more work:
 
 The DCR compatibility changes and settings routes need dedicated regression tests. Broader authenticated Pocket management UI coverage remains open. Real Grok sign-in/use and a live refresh rotation are now verified as described above; this does not prove every Grok/Tesla client scenario.
 
-Deployment and security work remains too. The repo does not include a reproducible production launcher. The native lifecycle harness is now included in tests/test_native_refresh_lifecycle.py; its pinned Pocket binary remains an external prerequisite. The SQLite status check is tied to a specific release and schema, so upgrades and database restores need explicit approval. WAL visibility and least-privilege access still need operational testing. A full dependency/advisory review and upstream grant teardown are also unfinished.
+Deployment and security work remains too. The repo now includes an environment-only packaged entry point and safe example settings. Provisioning and private host configuration remain operator-owned; the existing flat live launcher has not been migrated by this refactor. The native lifecycle harness is now included in tests/test_native_refresh_lifecycle.py; its pinned Pocket binary remains an external prerequisite. The SQLite status check is tied to a specific release and schema, so upgrades and database restores need explicit approval. WAL visibility and least-privilege access still need operational testing. A full dependency/advisory review and upstream grant teardown are also unfinished.
 
-## Current verification — 2026-10-18
+## Environment configuration — 2026-10-19
+
+The PR adds validated process-start environment settings for origin, callback and
+branding, plus a packaged entry point for runtime paths, client/owner identity,
+ports and a private client-secret file. The real native lifecycle also passed with
+an alternate origin (including a port) and alternate client callback. Host and
+Origin checks, native callback matching and refresh grant checks use the same
+configured origin. Missing/invalid values are rejected. Security pins remain fixed.
+
+Personal host/path details were replaced with operator variables in the latest
+docs; earlier commits still contain that metadata. The running host has not been
+migrated by this refactor. See [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Deployed verification — 2026-10-18
 
 - Local suite: **291 passed, 2 skipped**; Ruff passed. Skips are the absent older legacy harness and the opt-in pinned native test, which ran separately on the Mac.
 - Real Pocket v2.17.0 lifecycle on disposable synthetic identities passed against staged and actual deployed modules: native sign-in/code exchange, four rotations, expired-access recovery, bridge restart, MCP and revocation. With the government API enabled, the deployed code returned 21 Tsuen Wan car parks.
@@ -102,4 +115,4 @@ Most tests use synthetic fixtures. They do not establish that the production pas
 
 The gzip fix removes content-encoding, content-length and transfer-encoding headers after buffering the decoded response. That avoids decoding the same body twice. It does not prove that every frontend asset or route works.
 
-This draft excludes private runtime files, keys, databases, logs, operational AGENTS and the production launcher. Publishing or editing the draft does not deploy it or authorize a merge.
+This draft excludes private runtime files, keys, databases, logs, operational AGENTS and the previous private production launcher. Publishing or editing the draft does not deploy it or authorize a merge.

@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from tests.synthetic_support import binding, identity_db, seed_grant
 
-PUBLIC = 'https://carpark.laporatory.com'
+PUBLIC = 'https://carpark.example.test'
 
 
 def test_immutable_identity_crypto_and_live_invalidation(tmp_path):

@@ -5,6 +5,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from hkparking.deployment import SETTINGS
+
 CONTRACT=json.loads((Path(__file__).resolve().parents[1]/'src/hkparking/auth/native-schema-v2.17.0.json').read_text())
 
 
@@ -17,7 +19,7 @@ def identity_db(path,sub='fixture-sub',client='fixture-client'):
         for row in CONTRACT['migrations']['schema_migrations']:
             db.execute('INSERT INTO schema_migrations VALUES(?,?)',row)
         db.execute('INSERT INTO users(id,username,first_name,last_name,display_name,disabled) VALUES(?,?,?,?,?,0)',(sub,'SYNTHETIC-user','SYNTHETIC','','SYNTHETIC'))
-        db.execute('INSERT INTO oidc_clients(id,created_at,name,callback_urls,is_public,pkce_enabled) VALUES(?,CURRENT_TIMESTAMP,?,?,0,1)',(client,'SYNTHETIC-client',json.dumps(['https://carpark.laporatory.com/auth/callback'])))
+        db.execute('INSERT INTO oidc_clients(id,created_at,name,callback_urls,is_public,pkce_enabled) VALUES(?,CURRENT_TIMESTAMP,?,?,0,1)',(client,'SYNTHETIC-client',json.dumps([SETTINGS.public_origin+'/auth/callback'])))
     return path
 
 

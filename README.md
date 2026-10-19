@@ -4,6 +4,10 @@ This server lets an MCP client look up Hong Kong car parks and their reported va
 
 The OAuth bridge connects Grok to Pocket ID v2.17.0 for passkey sign-in. This version is deployed on the home Mac. The user reconnected Grok and completed a parking query; live aggregate metadata also recorded refresh rotation with about 30 days of refresh validity. Overnight and long-term client persistence remain separate checks. Pocket administration and other known review gaps are listed in [AUTH-REVIEW.md](AUTH-REVIEW.md).
 
+## Configure the deployment
+
+Copy [`.env.example`](.env.example) to a private file and set the public origin, exact client callback, branding, ports and runtime paths. See [DEPLOYMENT.md](DEPLOYMENT.md) for the required settings and startup command. Deployment settings are read once at startup.
+
 ## Run the checks
 
 ```sh
@@ -15,7 +19,7 @@ uv run python scripts/live_mcp_check.py
 
 The automated tests use synthetic identities and parking fixtures. The live check starts a temporary local server and calls the real government API. It uses a preview auth provider, so it does not test Pocket ID, passkeys or Grok.
 
-The optional native lifecycle test includes its synthetic identity harness but requires the separately installed, checksum-pinned Pocket ID binary. The older legacy-harness test also skips when its external module is absent. This repo also leaves out the Mac production launcher and private configuration. You can inspect and test the Python code, but cloning it is not enough to reproduce the running deployment. The packaged modules use relative imports; the current Mac deployment uses flat modules.
+The optional native lifecycle test includes its synthetic identity harness but requires the separately installed, checksum-pinned Pocket ID binary. The older legacy-harness test also skips when its external module is absent. The private Mac launcher and configuration stay outside Git. A packaged environment-only entry point is now available; see [DEPLOYMENT.md](DEPLOYMENT.md). You can inspect and test the Python code, but cloning it is not enough to reproduce the running deployment. The packaged modules use relative imports; the current Mac deployment uses flat modules.
 
 ## How sign-in works
 
@@ -33,11 +37,10 @@ Pocket v2.17.0 does not include `refresh_expires_in` in its token response. The 
 
 Expired tokens issued before this fix cannot be revived. Reconnect once to obtain the corrected lifetime. Revocation, replay, upstream expiry and an ambiguous refresh failure can still require sign-in.
 
-An optional native lifecycle test uses a checksum-pinned Mac binary and a disposable synthetic Pocket identity. It tests code/PKCE/consent, access expiry, refresh rotation, bridge restart, MCP and revocation; it does not use production credentials or verify a real Grok session:
+Set `POCKET_TEST_BINARY` to the approved binary path. An optional native lifecycle test uses a checksum-pinned Mac binary and a disposable synthetic Pocket identity. It tests code/PKCE/consent, access expiry, refresh rotation, bridge restart, MCP and revocation; it does not use production credentials or verify a real Grok session:
 
 ```sh
-POCKET_TEST_BINARY=/Users/lihome/.local/lib/hk-carpark-mcp/bin/pocket-id-v2.17.0 \
-  uv run pytest -q -s tests/test_native_refresh_lifecycle.py
+uv run pytest -q -s tests/test_native_refresh_lifecycle.py
 ```
 
 Set `CARPARK_TEST_LIVE_GOVERNMENT=1` to include the real government API. See [DEPLOYMENT-REFRESH.md](DEPLOYMENT-REFRESH.md) for the deployed files and rollback.
@@ -59,14 +62,14 @@ The server calls only the fixed HTTPS government parking endpoint. It does not s
 
 Search results use literal keywords. The client must choose the correct car park; the server does not guess which result the user meant. Vacancy records keep their original categories and timestamps. The server does not sum categories or infer counts from capacity, and it does not present stale records as current availability.
 
-## Current review snapshot — 2026-10-18
+## Current review snapshot
 
 - Two read-only tools use the Hong Kong government car-park catalogue and vacancy API. No additional private/commercial feeds are included.
 - Refresh lifetime follows the active native Pocket session instead of the old one-hour fallback. Normal successful rotations renew that native window.
 - The Carpark consent page has minimal light/dark styling, escaped request labels, and the original SDK consent/CSRF checks. Its browser-tested referrer policy preserves the form Origin.
 - Pocket sign-in uses the system font. The custom mountain image was backed up and removed on the host; Pocket supplies its plain background and native theme colours.
-- Local verification: 291 passed, 2 skipped; Ruff passed. Real Pocket lifecycle tests passed against the deployed modules, including refresh/restart/revocation and a government query returning 21 Tsuen Wan car parks.
-- Source, tests, lockfile and operational notes are versioned. The deployed flat-module import adaptation, private production launcher/environment, launchd jobs, runtime state and image backup are host-managed, so this is not yet a one-command reproducible deployment.
+- Local verification on 2026-10-19: 309 passed, 2 skipped; Ruff passed. Earlier real Pocket lifecycle tests passed against the deployed modules. The environment refactor also passed the native lifecycle with a different origin/callback, including refresh/restart/revocation and a government query returning 21 Tsuen Wan car parks.
+- Source, tests, lockfile and operational notes are versioned. The private production environment, launchd jobs, runtime state and image backup are host-managed. A new packaged entry point uses validated environment variables. This refactor is in the PR and has not changed the running host.
 
 See [DEPLOYMENT-REFRESH.md](DEPLOYMENT-REFRESH.md), [CONSENT-UI.md](CONSENT-UI.md) and [POCKET-APPEARANCE.md](POCKET-APPEARANCE.md) for the changes and rollback boundaries. The latter also records the host-side background removal.
 

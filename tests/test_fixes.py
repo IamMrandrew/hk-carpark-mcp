@@ -10,6 +10,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from hkparking.auth import integration as m
+from hkparking.deployment import SETTINGS
 from tests.synthetic_support import binding, identity_db, seed_grant
 
 
@@ -113,7 +114,7 @@ def test_stored_expiry_after_await_denied(tmp_path):
 
 def downstream_client():
     from mcp.shared.auth import OAuthClientInformationFull
-    return OAuthClientInformationFull(client_id='SYNTHETIC-downstream',redirect_uris=['https://grok.com/connectors-oauth-exchange-code/'],token_endpoint_auth_method='none',scope='parking:read',grant_types=['authorization_code','refresh_token'],response_types=['code'])
+    return OAuthClientInformationFull(client_id='SYNTHETIC-downstream',redirect_uris=[SETTINGS.client_redirect_uri],token_endpoint_auth_method='none',scope='parking:read',grant_types=['authorization_code','refresh_token'],response_types=['code'])
 
 
 async def seed_code(p,client,token):

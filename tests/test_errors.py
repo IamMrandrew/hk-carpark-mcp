@@ -35,7 +35,7 @@ def test_callback_upstream_exception_payload_denied(tmp_path):
             txn=OAuthTransaction(txn_id='SYNTHETIC-txn',client_id='SYNTHETIC-client',client_redirect_uri='https://grok.com/connectors-oauth-exchange-code/',client_state='SYNTHETIC-state',code_challenge='x'*43,code_challenge_method='S256',scopes=['parking:read'],created_at=time.time(),proxy_code_verifier='x'*64,consent_token='SYNTHETIC-binding')
             await p._transaction_store.put(key=txn.txn_id,value=txn,ttl=300)
             response=Response()
-            request=Request({'type':'http','method':'GET','scheme':'https','path':'/','headers':[],'query_string':b'','server':('carpark.laporatory.com',443)})
+            request=Request({'type':'http','method':'GET','scheme':'https','path':'/','headers':[],'query_string':b'','server':('carpark.example.test',443)})
             p._set_consent_binding_cookie(request,response,txn.txn_id,txn.consent_token)
             cookie=response.headers['set-cookie'].split(';',1)[0]
             r=await c.get('/auth/callback',params={'state':txn.txn_id,'code':'SYNTHETIC-code'},headers={'cookie':cookie})

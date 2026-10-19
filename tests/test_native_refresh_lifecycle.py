@@ -24,6 +24,8 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 
+from hkparking.deployment import SETTINGS
+
 if os.environ.get('CARPARK_TEST_FLAT_DIR'):
     sys.path.insert(0, os.environ['CARPARK_TEST_FLAT_DIR'])
     from integration import PUBLIC, RELEASE, PocketConfig, build_integration
@@ -58,7 +60,7 @@ def native_fixture(home):
     process = subprocess.Popen([str(binary)], cwd=home, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        headers = {'host': 'carpark.laporatory.com', 'x-forwarded-proto': 'https'}
+        headers = {'host': urlsplit(PUBLIC).netloc, 'x-forwarded-proto': 'https'}
         with httpx.Client(base_url=f'http://127.0.0.1:{port}', headers=headers,
                           trust_env=False, timeout=2) as http:
             deadline = time.monotonic() + 60
@@ -106,7 +108,7 @@ def native_fixture(home):
 
 
 async def sign_in(http):
-    metadata = {'redirect_uris': ['https://grok.com/connectors-oauth-exchange-code/'],
+    metadata = {'redirect_uris': [SETTINGS.client_redirect_uri],
                 'token_endpoint_auth_method': 'none', 'scope': 'parking:read',
                 'grant_types': ['authorization_code', 'refresh_token'], 'response_types': ['code']}
     response = await http.post('/register', json=metadata)

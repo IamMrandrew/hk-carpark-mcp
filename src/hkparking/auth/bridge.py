@@ -15,11 +15,13 @@ from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.provider import AccessToken, AuthorizeError, RefreshToken, TokenError, TokenVerifier
 
+from hkparking.deployment import SETTINGS
+
 from .ledger import Ledger, LimitReached
 
-PUBLIC = 'https://carpark.laporatory.com'
+PUBLIC = SETTINGS.public_origin
 RESOURCE = PUBLIC + '/mcp'
-CALLBACK = 'https://grok.com/connectors-oauth-exchange-code/'
+CALLBACK = SETTINGS.client_redirect_uri
 SCOPE = ['parking:read']
 REVOCATION_LOOKUP = ContextVar('revocation_lookup',default=False)
 CAPACITY_EXCEEDED = ContextVar('capacity_exceeded',default=False)

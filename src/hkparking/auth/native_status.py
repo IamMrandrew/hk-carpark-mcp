@@ -7,6 +7,8 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+from hkparking.deployment import SETTINGS
+
 RELEASE='v2.17.0'
 _CONTRACT=json.loads((Path(__file__).parent/'native-schema-v2.17.0.json').read_text())
 _SCHEMA=tuple(tuple(row) for row in _CONTRACT['schema'])
@@ -51,7 +53,7 @@ class NativeStatus:
 
     def client_policy(self,db):
         row=db.execute('SELECT callback_urls,is_public,pkce_enabled,client_type FROM oidc_clients WHERE id=?',(self._config.client_id,)).fetchone()
-        return row is not None and json.loads(row[0])==['https://carpark.laporatory.com/auth/callback'] and row[1:]==(0,1,'standard')
+        return row is not None and json.loads(row[0])==[SETTINGS.public_origin+'/auth/callback'] and row[1:]==(0,1,'standard')
 
     def grant(self,token,claims):
         with self.snapshot() as db:

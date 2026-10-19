@@ -10,7 +10,7 @@ from mcp.server.auth.provider import AccessToken, TokenVerifier
 
 from hkparking.config import ServerConfig
 
-PUBLIC = "https://carpark.laporatory.com"
+PUBLIC = "https://carpark.example.test"
 RESOURCE = PUBLIC + "/mcp"
 ISSUER = "https://synthetic-issuer.example/oauth"
 
@@ -98,15 +98,15 @@ def test_verifier_has_no_default():
     "headers, expected",
     [
         ({"host": "127.0.0.1:8767"}, 421),
-        ({"host": "carpark.laporatory.com:9999"}, 421),
-        ({"host": "carpark.laporatory.com.evil.example"}, 421),
-        ({"host": "evil.example", "x-forwarded-host": "carpark.laporatory.com"}, 421),
+        ({"host": "carpark.example.test:9999"}, 421),
+        ({"host": "carpark.example.test.evil.example"}, 421),
+        ({"host": "evil.example", "x-forwarded-host": "carpark.example.test"}, 421),
         ({"origin": "https://evil.example"}, 403),
-        ({"origin": "http://carpark.laporatory.com"}, 403),
-        ({"origin": "https://carpark.laporatory.com:444"}, 403),
+        ({"origin": "http://carpark.example.test"}, 403),
+        ({"origin": "https://carpark.example.test:444"}, 403),
         ({"origin": "null"}, 403),
         ({"origin": ""}, 403),
-        ([("host", "carpark.laporatory.com"), ("host", "evil.example")], 421),
+        ([("host", "carpark.example.test"), ("host", "evil.example")], 421),
         ([("origin", PUBLIC), ("origin", "https://evil.example")], 403),
     ],
 )
@@ -262,7 +262,7 @@ def test_authenticated_tools_share_upstream_until_serving_loop_shutdown():
                     "clientInfo": {"name": "synthetic-client", "version": "1"},
                 },
             )
-            assert initialized["serverInfo"]["name"] == "Hong Kong Government Parking"
+            assert initialized["serverInfo"]["name"] == "Carpark"
             listing = await rpc(http, "tools/list")
             assert {tool["name"] for tool in listing["tools"]} == {
                 "search_carparks",
@@ -416,7 +416,7 @@ def test_official_sdk_client_over_real_loopback_socket():
                     await asyncio.sleep(0.01)
             base = f"http://127.0.0.1:{address[1]}"
             headers = {
-                "Host": "carpark.laporatory.com",
+                "Host": "carpark.example.test",
                 "Origin": PUBLIC,
                 "Authorization": "Bearer synthetic-valid",
             }

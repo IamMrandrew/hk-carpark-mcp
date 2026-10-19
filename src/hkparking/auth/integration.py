@@ -4,6 +4,7 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import httpx
 import jwt
@@ -49,7 +50,7 @@ class PocketTransport(httpx.AsyncBaseTransport):
             raise ValueError('Destination not explicitly configured')
         url = request.url.copy_with(scheme='http', host='127.0.0.1', port=self.config.loopback_port)
         headers = [(k,v) for k,v in request.headers.raw if k.lower() not in {b'host',b'x-forwarded-host',b'x-forwarded-proto',b'forwarded'}]
-        headers += [(b'host', b'carpark.laporatory.com'), (b'x-forwarded-proto',b'https')]
+        headers += [(b'host', urlsplit(PUBLIC).netloc.encode('ascii')), (b'x-forwarded-proto',b'https')]
         response = await self.inner.handle_async_request(httpx.Request(request.method,url,headers=headers,stream=request.stream,extensions=request.extensions))
         content = bytearray()
         try:
@@ -377,7 +378,7 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
     provider._upstream_token_store = NativeTokenStore(provider._upstream_token_store,provider)
     # Only local RFC7009 family denial is supported. NEVER forward proxy JWTs.
     provider.revocation_options = RevocationOptions(enabled=True)
-    app = build_app(ServerConfig(issuer_url=PUBLIC),ResourceVerifier(provider))
+    app = build_app(ServerConfig(issuer_url=PUBLIC,public_origin=PUBLIC),ResourceVerifier(provider))
     app.router.routes[0:0] = [r for r in provider.get_routes('/mcp') if not r.path.startswith('/.well-known/oauth-protected-resource')]
     app.state.provider = provider
     http = httpx.AsyncClient(transport=pocket_transport or PocketTransport(config, PUBLIC_PATHS),

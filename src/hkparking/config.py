@@ -5,11 +5,13 @@ from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl
 
+from .deployment import SETTINGS
+
 
 @dataclass(frozen=True, slots=True)
 class ServerConfig:
     issuer_url: str
-    public_origin: str = "https://carpark.laporatory.com"
+    public_origin: str = SETTINGS.public_origin
     listen_host: str = "127.0.0.1"
     listen_port: int = 8767
 
