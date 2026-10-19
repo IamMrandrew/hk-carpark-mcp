@@ -1,0 +1,429 @@
+{
+  "release": "v2.17.0",
+  "binary_sha256": "314e167fdc0635d544e46574c9fa244aae51045a53d297ef6d614abba8785d4b",
+  "user_version": 0,
+  "schema": [
+    [
+      "index",
+      "francis_active_actors_host_scan_idx",
+      "francis_active_actors",
+      "CREATE INDEX francis_active_actors_host_scan_idx ON francis_active_actors (host_id, actor_type)"
+    ],
+    [
+      "index",
+      "francis_actor_state_expiration_time_idx",
+      "francis_actor_state",
+      "CREATE INDEX francis_actor_state_expiration_time_idx ON francis_actor_state (actor_state_expiration_time)\n    WHERE actor_state_expiration_time IS NOT NULL"
+    ],
+    [
+      "index",
+      "francis_actor_state_wf_parent_idx",
+      "francis_actor_state",
+      "CREATE INDEX francis_actor_state_wf_parent_idx ON francis_actor_state (actor_type, json_extract(workflow_labels, '$.parent'), actor_id)\n    WHERE workflow_labels IS NOT NULL"
+    ],
+    [
+      "index",
+      "francis_actor_state_wf_status_idx",
+      "francis_actor_state",
+      "CREATE INDEX francis_actor_state_wf_status_idx ON francis_actor_state (actor_type, json_extract(workflow_labels, '$.status'), actor_id)\n    WHERE workflow_labels IS NOT NULL"
+    ],
+    [
+      "index",
+      "francis_actor_state_wf_version_idx",
+      "francis_actor_state",
+      "CREATE INDEX francis_actor_state_wf_version_idx ON francis_actor_state (actor_type, json_extract(workflow_labels, '$.version'), actor_id)\n    WHERE workflow_labels IS NOT NULL"
+    ],
+    [
+      "index",
+      "francis_actor_type_idx",
+      "francis_host_actor_types",
+      "CREATE INDEX francis_actor_type_idx ON francis_host_actor_types (actor_type)"
+    ],
+    [
+      "index",
+      "francis_alarm_due_time_idx",
+      "francis_alarms",
+      "CREATE INDEX francis_alarm_due_time_idx ON francis_alarms (alarm_due_time)"
+    ],
+    [
+      "index",
+      "francis_alarm_lease_id_idx",
+      "francis_alarms",
+      "CREATE UNIQUE INDEX francis_alarm_lease_id_idx ON francis_alarms (alarm_lease_id)\n    WHERE alarm_lease_id IS NOT NULL"
+    ],
+    [
+      "index",
+      "francis_alarm_ref_idx",
+      "francis_alarms",
+      "CREATE UNIQUE INDEX francis_alarm_ref_idx ON francis_alarms (actor_type, actor_id, alarm_name)"
+    ],
+    [
+      "index",
+      "francis_host_address_idx",
+      "francis_hosts",
+      "CREATE UNIQUE INDEX francis_host_address_idx ON francis_hosts (host_address)"
+    ],
+    [
+      "index",
+      "francis_host_last_health_check_idx",
+      "francis_hosts",
+      "CREATE INDEX francis_host_last_health_check_idx ON francis_hosts (host_last_health_check)"
+    ],
+    [
+      "index",
+      "francis_terminal_jobs_actor_idx",
+      "francis_terminal_jobs",
+      "CREATE INDEX francis_terminal_jobs_actor_idx ON francis_terminal_jobs (actor_type, actor_id)"
+    ],
+    [
+      "index",
+      "francis_terminal_jobs_expiration_time_idx",
+      "francis_terminal_jobs",
+      "CREATE INDEX francis_terminal_jobs_expiration_time_idx ON francis_terminal_jobs (expiration_time)\n    WHERE expiration_time IS NOT NULL"
+    ],
+    [
+      "index",
+      "idx_api_keys_expires_at",
+      "api_keys",
+      "CREATE INDEX idx_api_keys_expires_at ON api_keys(expires_at)"
+    ],
+    [
+      "index",
+      "idx_api_keys_key",
+      "api_keys",
+      "CREATE INDEX idx_api_keys_key ON api_keys(key)"
+    ],
+    [
+      "index",
+      "idx_api_permissions_api_id",
+      "api_permissions",
+      "CREATE INDEX idx_api_permissions_api_id ON api_permissions(api_id)"
+    ],
+    [
+      "index",
+      "idx_audit_logs_client_name",
+      "audit_logs",
+      "CREATE INDEX idx_audit_logs_client_name ON audit_logs((json_extract(data, '$.clientName')))"
+    ],
+    [
+      "index",
+      "idx_audit_logs_country",
+      "audit_logs",
+      "CREATE INDEX idx_audit_logs_country ON audit_logs (country)"
+    ],
+    [
+      "index",
+      "idx_audit_logs_created_at",
+      "audit_logs",
+      "CREATE INDEX idx_audit_logs_created_at ON audit_logs (created_at)"
+    ],
+    [
+      "index",
+      "idx_audit_logs_event",
+      "audit_logs",
+      "CREATE INDEX idx_audit_logs_event ON audit_logs (event)"
+    ],
+    [
+      "index",
+      "idx_audit_logs_user_agent",
+      "audit_logs",
+      "CREATE INDEX idx_audit_logs_user_agent ON audit_logs (user_agent)"
+    ],
+    [
+      "index",
+      "idx_audit_logs_user_id",
+      "audit_logs",
+      "CREATE INDEX idx_audit_logs_user_id ON audit_logs (user_id)"
+    ],
+    [
+      "index",
+      "idx_interaction_sessions_client_id",
+      "interaction_sessions",
+      "CREATE INDEX idx_interaction_sessions_client_id ON interaction_sessions (client_id)"
+    ],
+    [
+      "index",
+      "idx_interaction_sessions_user_id",
+      "interaction_sessions",
+      "CREATE INDEX idx_interaction_sessions_user_id ON interaction_sessions (user_id)"
+    ],
+    [
+      "index",
+      "idx_oauth2_jtis_expires_at",
+      "oauth2_jtis",
+      "CREATE INDEX idx_oauth2_jtis_expires_at ON oauth2_jtis (expires_at)"
+    ],
+    [
+      "index",
+      "idx_oauth2_sessions_client_subject",
+      "oauth2_sessions",
+      "CREATE INDEX idx_oauth2_sessions_client_subject\n    ON oauth2_sessions (client_id, json_extract(CAST(request_data AS TEXT), '$.session.subject'), kind, active)"
+    ],
+    [
+      "index",
+      "idx_oauth2_sessions_expires_at",
+      "oauth2_sessions",
+      "CREATE INDEX idx_oauth2_sessions_expires_at ON oauth2_sessions (expires_at)"
+    ],
+    [
+      "index",
+      "idx_oauth2_sessions_kind_key",
+      "oauth2_sessions",
+      "CREATE UNIQUE INDEX idx_oauth2_sessions_kind_key ON oauth2_sessions (kind, key)"
+    ],
+    [
+      "index",
+      "idx_oauth2_sessions_kind_request",
+      "oauth2_sessions",
+      "CREATE INDEX idx_oauth2_sessions_kind_request ON oauth2_sessions (kind, request_id)"
+    ],
+    [
+      "index",
+      "idx_oidc_clients_allowed_apis_api_id",
+      "oidc_clients_allowed_apis",
+      "CREATE INDEX idx_oidc_clients_allowed_apis_api_id ON oidc_clients_allowed_apis(api_id)"
+    ],
+    [
+      "index",
+      "idx_reauthentication_tokens_expires_at",
+      "reauthentication_tokens",
+      "CREATE INDEX idx_reauthentication_tokens_expires_at ON reauthentication_tokens (expires_at)"
+    ],
+    [
+      "index",
+      "idx_reauthentication_tokens_token",
+      "reauthentication_tokens",
+      "CREATE INDEX idx_reauthentication_tokens_token ON reauthentication_tokens (token)"
+    ],
+    [
+      "index",
+      "idx_webauthn_sessions_expires_at",
+      "webauthn_sessions",
+      "CREATE INDEX idx_webauthn_sessions_expires_at ON webauthn_sessions (expires_at)"
+    ],
+    [
+      "index",
+      "user_groups_ldap_id",
+      "user_groups",
+      "CREATE UNIQUE INDEX user_groups_ldap_id ON user_groups (ldap_id)"
+    ],
+    [
+      "index",
+      "version_unique",
+      "schema_migrations",
+      "CREATE UNIQUE INDEX version_unique ON schema_migrations (version)"
+    ],
+    [
+      "table",
+      "api_keys",
+      "api_keys",
+      "CREATE TABLE api_keys (\r\n    id TEXT PRIMARY KEY,\r\n    name TEXT NOT NULL,\r\n    key TEXT NOT NULL UNIQUE,\r\n    description TEXT,\r\n    expires_at DATETIME NOT NULL,\r\n    last_used_at DATETIME,\r\n    created_at DATETIME,\r\n    user_id TEXT REFERENCES users(id) ON DELETE CASCADE\r\n, expiration_email_sent BOOLEAN NOT NULL DEFAULT 0)"
+    ],
+    [
+      "table",
+      "api_permissions",
+      "api_permissions",
+      "CREATE TABLE api_permissions (\n    id TEXT NOT NULL PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    api_id TEXT NOT NULL REFERENCES apis(id) ON DELETE CASCADE,\n    key TEXT NOT NULL,\n    name TEXT NOT NULL,\n    description TEXT, allowed_for_cimd_clients BOOLEAN NOT NULL DEFAULT FALSE,\n    UNIQUE (api_id, key)\n)"
+    ],
+    [
+      "table",
+      "apis",
+      "apis",
+      "CREATE TABLE apis (\n    id TEXT NOT NULL PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    updated_at DATETIME,\n    name TEXT NOT NULL,\n    audience TEXT NOT NULL UNIQUE\n, allow_cimd_clients BOOLEAN NOT NULL DEFAULT FALSE)"
+    ],
+    [
+      "table",
+      "audit_logs",
+      "audit_logs",
+      "CREATE TABLE \"audit_logs\"\n(\n    id         TEXT PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    event      TEXT NOT NULL,\n    ip_address TEXT,\n    user_agent TEXT NOT NULL,\n    data       BLOB NOT NULL,\n    user_id    TEXT REFERENCES users ON DELETE CASCADE,\n    country    TEXT,\n    city       TEXT\n)"
+    ],
+    [
+      "table",
+      "custom_claims",
+      "custom_claims",
+      "CREATE TABLE custom_claims\n(\n    id            TEXT NOT NULL PRIMARY KEY,\n    created_at    DATETIME,\n    key           TEXT NOT NULL,\n    value         TEXT NOT NULL,\n\n    user_id       TEXT,\n    user_group_id TEXT,\n    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,\n    FOREIGN KEY (user_group_id) REFERENCES user_groups (id) ON DELETE CASCADE,\n\n    CONSTRAINT custom_claims_unique UNIQUE (key, user_id, user_group_id),\n    CHECK (user_id IS NOT NULL OR user_group_id IS NOT NULL)\n)"
+    ],
+    [
+      "table",
+      "francis_active_actors",
+      "francis_active_actors",
+      "CREATE TABLE francis_active_actors (\n    -- Actor type\n    actor_type text NOT NULL,\n    -- Actor ID\n    actor_id text NOT NULL,\n    -- Host on which the actor is active\n    host_id text NOT NULL,\n    -- Idle timeout, in milliseconds\n    -- This is copied from the host_actor_types table\n    actor_idle_timeout integer NOT NULL,\n    -- Time the actor was originally activated at, as a unix timestmap in milliseconds\n    actor_activation integer NOT NULL DEFAULT (unixepoch('subsec') * 1000),\n\n    PRIMARY KEY (actor_type, actor_id),\n    FOREIGN KEY (host_id) REFERENCES francis_hosts (host_id) ON DELETE CASCADE\n) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "francis_actor_state",
+      "francis_actor_state",
+      "CREATE TABLE francis_actor_state (\n    -- Actor type\n    actor_type text NOT NULL,\n    -- Actor ID\n    actor_id text NOT NULL,\n    -- State data\n    actor_state_data blob NOT NULL,\n    -- If set, indicates the expiration time for this state\n    -- Expired rows are automatically garbage collected\n    actor_state_expiration_time integer, workflow_labels text,\n\n    PRIMARY KEY (actor_type, actor_id)\n) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "francis_alarms",
+      "francis_alarms",
+      "CREATE TABLE francis_alarms (\n    -- Alarm ID, as UUID\n    alarm_id text PRIMARY KEY NOT NULL,\n    -- Actor type\n    actor_type text NOT NULL,\n    -- Actor ID\n    actor_id text NOT NULL,\n    -- Name of the alarm\n    alarm_name text NOT NULL,\n    -- Due time for the alarm, as a unix timestamp in milliseconds\n    alarm_due_time integer NOT NULL,\n    -- For repeating alarms, as an ISO8601-formatted duration string.\n    alarm_interval text,\n    -- For repeating alarms, time at which to stop repeating\n    -- This is a unix timestamp in millisecond\n    alarm_ttl_time integer,\n    -- Optional data associated with the alarm\n    alarm_data blob,\n    -- For alarms that have been fetched and have a lease, this is a unique ID for the lease\n    alarm_lease_id text,\n    -- For alarms that have been fetched and have a lease, indicates the time the lease expires\n    -- Note that leases can be renewed\n    -- This is a unix timestamp in millisecond\n    alarm_lease_expiration_time integer\n, alarm_kind text NOT NULL DEFAULT 'alarm', job_method text, alarm_cron text) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "francis_cluster_config",
+      "francis_cluster_config",
+      "CREATE TABLE francis_cluster_config (\n    -- Enforces a single row\n    cluster_config_id integer NOT NULL PRIMARY KEY CHECK (cluster_config_id = 1),\n    -- max_hosts is null until the first host claims it (a claimed value of 0 means no limit)\n    max_hosts integer,\n    -- exclusive_owner and exclusive_expires_at are null when no exclusive-access lease is held\n    exclusive_owner text,\n    exclusive_expires_at integer\n) STRICT"
+    ],
+    [
+      "table",
+      "francis_consumed_join_tokens",
+      "francis_consumed_join_tokens",
+      "CREATE TABLE francis_consumed_join_tokens (\n    join_token text NOT NULL PRIMARY KEY,\n    host_id text NOT NULL REFERENCES francis_hosts(host_id) ON DELETE CASCADE,\n    -- This is a unix timestamp in millisecond\n    expires_at integer NOT NULL\n) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "francis_host_actor_types",
+      "francis_host_actor_types",
+      "CREATE TABLE francis_host_actor_types (\n    -- ID of the host, as UUID\n    -- References the \"hosts\" table\n    host_id text NOT NULL,\n    -- Actor type name\n    actor_type text NOT NULL,\n    -- Idle timeout, in milliseconds\n    actor_idle_timeout integer NOT NULL,\n    -- Maximum number of concurrent actors of this type that can be active on the host\n    -- A value of 0 means no limit\n    actor_concurrency_limit int NOT NULL DEFAULT 0,\n\n    PRIMARY KEY (host_id, actor_type),\n    FOREIGN KEY (host_id) REFERENCES francis_hosts (host_id) ON DELETE CASCADE\n) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "francis_hosts",
+      "francis_hosts",
+      "CREATE TABLE francis_hosts (\n    -- ID of the host, as UUID\n    host_id text NOT NULL PRIMARY KEY,\n    -- Address and port of the host\n    host_address text NOT NULL,\n    -- Last health check received, as unix timestamp in milliseconds\n    host_last_health_check integer NOT NULL DEFAULT (unixepoch('subsec') * 1000)\n, host_session_id text, host_draining integer NOT NULL DEFAULT 0) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "francis_metadata",
+      "francis_metadata",
+      "CREATE TABLE francis_metadata (\n\t\t\tkey text NOT NULL PRIMARY KEY,\n\t\t\tvalue text NOT NULL\n\t\t)"
+    ],
+    [
+      "table",
+      "francis_terminal_jobs",
+      "francis_terminal_jobs",
+      "CREATE TABLE francis_terminal_jobs (\n    -- Job ID, equal to the original alarm_id (as UUID)\n    job_id text PRIMARY KEY NOT NULL,\n    -- Actor type\n    actor_type text NOT NULL,\n    -- Actor ID\n    actor_id text NOT NULL,\n    -- Job handler method\n    job_method text NOT NULL,\n    -- Opaque job input data\n    job_data blob,\n    -- How the job ended: 'completed' or 'dead'\n    job_status text NOT NULL,\n    -- Number of attempts the occurrence took\n    attempts integer NOT NULL,\n    -- Last error recorded for a job that dead-lettered, and null for one that completed\n    last_error text,\n    -- Time the job ended, as a unix timestamp in milliseconds\n    ended_at integer NOT NULL,\n    -- Original due time of the occurrence, as a unix timestamp in milliseconds\n    original_due integer NOT NULL,\n    -- Repetition interval of the original job, if any\n    job_interval text,\n    -- Cron schedule of the original job, if any\n    job_cron text,\n    -- If set, the time after which the record is garbage collected, as a unix timestamp in milliseconds\n    expiration_time integer\n) WITHOUT ROWID, STRICT"
+    ],
+    [
+      "table",
+      "interaction_sessions",
+      "interaction_sessions",
+      "CREATE TABLE \"interaction_sessions\" (\n    id TEXT NOT NULL PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    consent_required BOOLEAN NOT NULL DEFAULT FALSE,\n    reauthentication_required BOOLEAN NOT NULL DEFAULT FALSE,\n    authentication_required BOOLEAN NOT NULL DEFAULT FALSE,\n    account_selection_required BOOLEAN NOT NULL DEFAULT FALSE,\n    scopes BLOB NOT NULL DEFAULT X'5B5D',\n    client_id TEXT NOT NULL REFERENCES oidc_clients(id) ON DELETE CASCADE,\n    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,\n    requested_at DATETIME NOT NULL,\n    reauthenticated_at DATETIME,\n    parameters BLOB NOT NULL DEFAULT X'7B7D'\n)"
+    ],
+    [
+      "table",
+      "kv",
+      "kv",
+      "CREATE TABLE kv\n(\n    \"key\"  TEXT NOT NULL PRIMARY KEY,\n    \"value\" TEXT NOT NULL\n)"
+    ],
+    [
+      "table",
+      "oauth2_jtis",
+      "oauth2_jtis",
+      "CREATE TABLE \"oauth2_jtis\" (\n    id TEXT NOT NULL PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    jti TEXT NOT NULL UNIQUE,\n    expires_at DATETIME NOT NULL\n)"
+    ],
+    [
+      "table",
+      "oauth2_sessions",
+      "oauth2_sessions",
+      "CREATE TABLE \"oauth2_sessions\" (\n    id TEXT NOT NULL PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    kind TEXT NOT NULL,\n    key TEXT NOT NULL,\n    request_id TEXT NOT NULL,\n    client_id TEXT NOT NULL REFERENCES oidc_clients(id) ON DELETE CASCADE,\n    access_token_signature TEXT NOT NULL DEFAULT '',\n    active BOOLEAN NOT NULL DEFAULT TRUE,\n    request_data BLOB NOT NULL,\n    expires_at DATETIME, rotated_at INTEGER,\n    CONSTRAINT chk_oauth2_sessions_client_id\n        CHECK (client_id = json_extract(CAST(request_data AS TEXT), '$.client_id'))\n)"
+    ],
+    [
+      "table",
+      "oidc_clients",
+      "oidc_clients",
+      "CREATE TABLE \"oidc_clients\"\n(\n    id                        TEXT PRIMARY KEY,\n    created_at                DATETIME NOT NULL,\n    name                      TEXT,\n    callback_urls             BLOB,\n    image_type                TEXT,\n    created_by_id             TEXT REFERENCES users ON DELETE SET NULL,\n    is_public                 BOOLEAN DEFAULT FALSE,\n    pkce_enabled              BOOLEAN DEFAULT FALSE,\n    logout_callback_urls      BLOB,\n    credentials               BLOB,\n    launch_url                TEXT,\n    requires_reauthentication BOOLEAN NOT NULL DEFAULT FALSE,\n    dark_image_type           TEXT,\n    is_group_restricted       BOOLEAN NOT NULL DEFAULT 0\n, requires_pushed_authorization_requests BOOLEAN NOT NULL DEFAULT FALSE, skip_consent BOOLEAN NOT NULL DEFAULT FALSE, pkce_supported BOOLEAN NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '', client_type TEXT NOT NULL DEFAULT 'standard', metadata_expires_at DATETIME, metadata_grant_types BLOB, access_token_duration_minutes INTEGER NOT NULL DEFAULT 60, refresh_token_duration_minutes INTEGER NOT NULL DEFAULT 43200, backchannel_logout_url TEXT NOT NULL DEFAULT '')"
+    ],
+    [
+      "table",
+      "oidc_clients_allowed_api_permissions",
+      "oidc_clients_allowed_api_permissions",
+      "CREATE TABLE oidc_clients_allowed_api_permissions (\n    oidc_client_id TEXT NOT NULL REFERENCES oidc_clients(id) ON DELETE CASCADE,\n    api_permission_id TEXT NOT NULL REFERENCES api_permissions(id) ON DELETE CASCADE,\n    subject_type TEXT NOT NULL CHECK (subject_type IN ('user', 'client')),\n    PRIMARY KEY (oidc_client_id, api_permission_id, subject_type)\n)"
+    ],
+    [
+      "table",
+      "oidc_clients_allowed_apis",
+      "oidc_clients_allowed_apis",
+      "CREATE TABLE oidc_clients_allowed_apis (\n    oidc_client_id TEXT NOT NULL REFERENCES oidc_clients(id) ON DELETE CASCADE,\n    api_id TEXT NOT NULL REFERENCES apis(id) ON DELETE CASCADE,\n    subject_type TEXT NOT NULL CHECK (subject_type IN ('user', 'client')),\n    PRIMARY KEY (oidc_client_id, api_id, subject_type)\n)"
+    ],
+    [
+      "table",
+      "oidc_clients_allowed_user_groups",
+      "oidc_clients_allowed_user_groups",
+      "CREATE TABLE oidc_clients_allowed_user_groups\n(\n    user_group_id  TEXT NOT NULL,\n    oidc_client_id TEXT NOT NULL,\n    PRIMARY KEY (oidc_client_id, user_group_id),\n    FOREIGN KEY (oidc_client_id) REFERENCES oidc_clients (id) ON DELETE CASCADE,\n    FOREIGN KEY (user_group_id) REFERENCES user_groups (id) ON DELETE CASCADE\n)"
+    ],
+    [
+      "table",
+      "reauthentication_tokens",
+      "reauthentication_tokens",
+      "CREATE TABLE \"reauthentication_tokens\" (\n    id TEXT PRIMARY KEY,\n    created_at DATETIME NOT NULL,\n    token TEXT NOT NULL UNIQUE,\n    expires_at DATETIME NOT NULL,\n    user_id TEXT NOT NULL REFERENCES users ON DELETE CASCADE\n)"
+    ],
+    [
+      "table",
+      "schema_migrations",
+      "schema_migrations",
+      "CREATE TABLE schema_migrations (version uint64,dirty bool)"
+    ],
+    [
+      "table",
+      "scim_service_providers",
+      "scim_service_providers",
+      "CREATE TABLE scim_service_providers\n(\n    id             TEXT PRIMARY KEY,\n    created_at     DATETIME NOT NULL,\n    endpoint       TEXT     NOT NULL,\n    token          TEXT     NOT NULL,\n    last_synced_at DATETIME,\n    oidc_client_id TEXT     NOT NULL,\n    FOREIGN KEY (oidc_client_id) REFERENCES oidc_clients (id) ON DELETE CASCADE\n)"
+    ],
+    [
+      "table",
+      "storage",
+      "storage",
+      "CREATE TABLE storage\n(\n    path       TEXT NOT NULL PRIMARY KEY,\n    data       BLOB NOT NULL,\n    size       INTEGER NOT NULL,\n    mod_time   DATETIME NOT NULL,\n    created_at DATETIME NOT NULL\n)"
+    ],
+    [
+      "table",
+      "user_authorized_oidc_clients",
+      "user_authorized_oidc_clients",
+      "CREATE TABLE \"user_authorized_oidc_clients\" (\n    scope BLOB NOT NULL DEFAULT X'5B5D',\n    user_id TEXT NOT NULL REFERENCES users ON DELETE CASCADE,\n    client_id TEXT NOT NULL REFERENCES oidc_clients ON DELETE CASCADE,\n    last_used_at DATETIME NOT NULL,\n    PRIMARY KEY (user_id, client_id)\n)"
+    ],
+    [
+      "table",
+      "user_groups",
+      "user_groups",
+      "CREATE TABLE user_groups\n(\n    id           TEXT NOT NULL PRIMARY KEY,\n    created_at   DATETIME,\n    friendly_name TEXT NOT NULL,\n    name        TEXT NOT NULL UNIQUE\n, ldap_id TEXT, updated_at DATETIME)"
+    ],
+    [
+      "table",
+      "user_groups_users",
+      "user_groups_users",
+      "CREATE TABLE user_groups_users\n(\n    user_id  TEXT NOT NULL,\n    user_group_id TEXT NOT NULL,\n    PRIMARY KEY (user_id, user_group_id),\n    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,\n    FOREIGN KEY (user_group_id) REFERENCES user_groups (id) ON DELETE CASCADE\n)"
+    ],
+    [
+      "table",
+      "users",
+      "users",
+      "CREATE TABLE \"users\"\n(\n    id           TEXT                  NOT NULL PRIMARY KEY,\n    created_at   DATETIME,\n    updated_at   DATETIME,\n    username     TEXT COLLATE NOCASE   NOT NULL UNIQUE,\n    email        TEXT UNIQUE,\n    first_name   TEXT                  NOT NULL,\n    last_name    TEXT                  NOT NULL,\n    display_name TEXT                  NOT NULL,\n    is_admin     BOOLEAN DEFAULT FALSE NOT NULL,\n    ldap_id      TEXT UNIQUE,\n    locale       TEXT,\n    disabled     BOOLEAN DEFAULT FALSE NOT NULL\n, email_verified BOOLEAN NOT NULL DEFAULT FALSE)"
+    ],
+    [
+      "table",
+      "webauthn_credentials",
+      "webauthn_credentials",
+      "CREATE TABLE \"webauthn_credentials\"\n(\n    id               TEXT PRIMARY KEY,\n    created_at       DATETIME             NOT NULL,\n    name             TEXT                 NOT NULL,\n    credential_id    BLOB                 NOT NULL UNIQUE,\n    public_key       BLOB                 NOT NULL,\n    attestation_type TEXT                 NOT NULL,\n    transport        BLOB                 NOT NULL,\n    user_id          TEXT REFERENCES users ON DELETE CASCADE,\n    backup_eligible  BOOLEAN DEFAULT FALSE NOT NULL,\n    backup_state     BOOLEAN DEFAULT FALSE NOT NULL\n, aaguid TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000')"
+    ],
+    [
+      "table",
+      "webauthn_sessions",
+      "webauthn_sessions",
+      "CREATE TABLE \"webauthn_sessions\"\n(\n    id                TEXT              NOT NULL PRIMARY KEY,\n    created_at        DATETIME,\n    challenge         TEXT              NOT NULL UNIQUE,\n    expires_at        DATETIME          NOT NULL,\n    user_verification TEXT              NOT NULL,\n    credential_params BLOB DEFAULT '[]' NOT NULL\n, extensions TEXT NOT NULL DEFAULT '{}')"
+    ],
+    [
+      "trigger",
+      "francis_active_actors_delete_update_alarms",
+      "francis_active_actors",
+      "CREATE TRIGGER francis_active_actors_delete_update_alarms\nAFTER DELETE ON francis_active_actors\nBEGIN\n    UPDATE francis_alarms\n    SET\n        alarm_lease_id = NULL,\n        alarm_lease_expiration_time = NULL\n    WHERE\n        actor_type = OLD.actor_type\n        AND actor_id = OLD.actor_id\n        AND alarm_lease_id IS NOT NULL;\nEND"
+    ],
+    [
+      "view",
+      "francis_host_active_actor_count",
+      "francis_host_active_actor_count",
+      "CREATE VIEW francis_host_active_actor_count\n\t(host_id, actor_type, active_count)\nAS\n    SELECT host_id, actor_type, COUNT(*)\n    FROM francis_active_actors\n    GROUP BY host_id, actor_type"
+    ]
+  ],
+  "migrations": {
+    "schema_migrations": [
+      [
+        20260929120000,
+        0
+      ]
+    ]
+  }
+}
