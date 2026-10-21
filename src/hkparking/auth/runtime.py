@@ -1,4 +1,5 @@
 """Environment-only production startup; never logs secrets or callback queries."""
+import json
 import os
 import stat
 from dataclasses import dataclass
@@ -42,18 +43,25 @@ class RuntimeConfig:
     pocket_port: int
     listen_port: int
     identity_file: tuple[int,int]
+    additional_allowed_subs: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls,env=None):
         env=os.environ if env is None else env
         required(env,'CARPARK_PUBLIC_ORIGIN')
         DeploymentSettings.from_env(env)
+        additional = json.loads(env.get('CARPARK_ADDITIONAL_ALLOWED_SUBS', '[]'))
+        if type(additional) is not list or any(
+            not isinstance(sub, str) or not sub or sub.startswith('client-') for sub in additional
+        ):
+            raise ValueError('CARPARK_ADDITIONAL_ALLOWED_SUBS must be a JSON array of user subjects')
         cfg=cls(
             state_dir=absolute_path(env,'CARPARK_STATE_DIR'),
             identity_db=absolute_path(env,'CARPARK_POCKET_DATABASE'),
             secret_file=absolute_path(env,'CARPARK_POCKET_CLIENT_SECRET_FILE'),
             client_id=required(env,'CARPARK_POCKET_CLIENT_ID'),
             allowed_sub=required(env,'CARPARK_ALLOWED_SUB'),
+            additional_allowed_subs=tuple(additional),
             pocket_port=number(env,'CARPARK_POCKET_PORT','14110',1,65535),
             listen_port=number(env,'CARPARK_LISTEN_PORT','8767',1,65535),
             identity_file=(number(env,'CARPARK_POCKET_DB_DEVICE'),number(env,'CARPARK_POCKET_DB_INODE')))
@@ -81,6 +89,7 @@ def main():
     from .native_status import RELEASE
 
     cfg=RuntimeConfig.from_env()
-    pocket=PocketConfig(cfg.allowed_sub,cfg.client_id,cfg.pocket_port,str(cfg.identity_db),RELEASE,cfg.identity_file)
+    pocket=PocketConfig(cfg.allowed_sub,cfg.client_id,cfg.pocket_port,str(cfg.identity_db),RELEASE,cfg.identity_file,
+                        additional_allowed_subs=cfg.additional_allowed_subs)
     app=build_integration(cfg.state_dir,pocket,cfg.read_secret())
     uvicorn.run(app,host='127.0.0.1',port=cfg.listen_port,access_log=False,proxy_headers=False,log_level='info')

@@ -55,7 +55,8 @@ def native_fixture(home):
            'HOST': '127.0.0.1', 'PORT': str(port), 'ACTORS_HOST': '127.0.0.1',
            'ACTORS_PORT': str(free_port()), 'ENCRYPTION_KEY': secrets.token_urlsafe(32),
            'DB_CONNECTION_STRING': str(database), 'ANALYTICS_DISABLED': 'true',
-           'VERSION_CHECK_DISABLED': 'true', 'TRUST_PROXY': '127.0.0.1/32',
+           'VERSION_CHECK_DISABLED': 'true', 'REQUIRE_USER_EMAIL': 'false',
+           'UI_CONFIG_DISABLED': 'true', 'TRUST_PROXY': '127.0.0.1/32',
            'LOG_LEVEL': 'error', 'LOG_QUERY_ARGS': 'false'}
     process = subprocess.Popen([str(binary)], cwd=home, env=env,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -165,13 +166,16 @@ def private_native_root(tmp_path):
         yield Path(home)
 
 
-def test_real_native_refresh_expiry_rotation_and_restart(private_native_root):
+@pytest.mark.parametrize('additional_user', [False, True])
+def test_real_native_refresh_expiry_rotation_and_restart(private_native_root, additional_user):
     tmp_path = private_native_root
     with native_fixture(tmp_path / 'native') as fixture:
         path = fixture['database']
         st = path.stat()
-        cfg = PocketConfig('fixture-sub', fixture['client'], fixture['port'], str(path),
-                           RELEASE, (st.st_dev, st.st_ino))
+        cfg = PocketConfig('other-owner' if additional_user else 'fixture-sub',
+                           fixture['client'], fixture['port'], str(path),
+                           RELEASE, (st.st_dev, st.st_ino),
+                           additional_allowed_subs=('fixture-sub',) if additional_user else ())
 
         def new_app():
             app = build_integration(tmp_path / 'bridge', cfg, fixture['secret'])
