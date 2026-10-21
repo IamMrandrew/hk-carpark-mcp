@@ -107,7 +107,11 @@ Share `${CARPARK_PUBLIC_ORIGIN}/lc/<code>?redirect=%2Fsignup%2Fadd-passkey`
 privately. In Pocket v2.17.0, TTLs at most 15 minutes produce six-character codes;
 the stock UI may require twelve, so use the explicit 20-minute TTL. The CLI
 uses one hour and cannot set this expiry. Do not enable email recovery to work
-around the code-length difference.
+around the code-length difference. Normal approvals remain capped at 30 minutes.
+For a separately approved longer invitation, pass an explicit private
+`max_validity_seconds` override to `approve` (hard maximum 24 hours) and set both
+native TTL and bridge expiry to the same absolute deadline. This override is not
+exposed as a public request parameter; it does not change the normal default.
 
 The bridge stores only hashes of the invitation code and native browser session.
 It permits first enrollment only for an enabled non-admin user without existing

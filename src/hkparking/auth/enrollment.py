@@ -30,11 +30,13 @@ class EnrollmentStore:
     def digest(value):
         return hashlib.sha256(value.encode()).hexdigest()
 
-    def approve(self, code, subject, expires):
+    def approve(self, code, subject, expires, *, max_validity_seconds=1800):
         if not re.fullmatch('[A-Za-z0-9]{12}', code) or not isinstance(subject, str) or not subject:
             raise ValueError('Explicit long code and subject required')
-        if type(expires) is not int or expires > time.time() + 1800:
-            raise ValueError('Enrollment expiry must be explicit and at most 30 minutes away')
+        if type(max_validity_seconds) is not int or not 1 <= max_validity_seconds <= 86400:
+            raise ValueError('Explicit validity bound must be at most 24 hours')
+        if type(expires) is not int or expires > time.time() + max_validity_seconds:
+            raise ValueError('Enrollment expiry exceeds the approved validity bound')
         with self.db:
             self.db.execute('DELETE FROM invitations WHERE expires<=?', (int(time.time()),))
             # Reissuing an invitation closes any earlier enrollment session.

@@ -5,6 +5,7 @@ import sqlite3
 import time
 
 import httpx
+import pytest
 
 from hkparking.auth import integration as m
 from tests.test_fixes import crypto_setup
@@ -32,6 +33,24 @@ def test_invitation_store_binds_user_session_expiry_and_single_finish(tmp_path):
     store.approve('Abcdef234568', 'SYNTHETIC-invited-user', int(time.time()) - 1)
     assert store.pending('Abcdef234568') is None
     other.close()
+    store.close()
+
+
+def test_extended_invitation_requires_explicit_private_operator_bound(tmp_path):
+    from hkparking.auth.enrollment import EnrollmentStore
+    store = EnrollmentStore(tmp_path / 'invitations.sqlite')
+    expiry = int(time.time()) + 3600
+    with pytest.raises(ValueError):
+        store.approve('Abcdef234567', 'SYNTHETIC-invited-user', expiry)
+    store.approve('Abcdef234567', 'SYNTHETIC-invited-user', expiry, max_validity_seconds=86400)
+    assert store.pending('Abcdef234567') == 'SYNTHETIC-invited-user'
+    with pytest.raises(ValueError):
+        store.approve('Abcdef234568', 'SYNTHETIC-invited-user', int(time.time()) + 86410,
+                      max_validity_seconds=86400)
+    for bound in [86401, True, 0, '86400']:
+        with pytest.raises(ValueError):
+            store.approve('Abcdef234568', 'SYNTHETIC-invited-user', expiry,
+                          max_validity_seconds=bound)
     store.close()
 
 
