@@ -4,6 +4,7 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
@@ -14,6 +15,7 @@ from mcp.server.auth.provider import AccessToken
 from .appearance import style_sign_in
 from .bridge import PUBLIC, RESOURCE, SCOPE
 from .consent import render_consent
+from .enrollment import EnrollmentStore
 from .native_status import RELEASE, NativeStatus
 
 __all__ = ['RELEASE', 'NativeStatus', 'PocketConfig', 'PocketVerifier', 'build_integration']
@@ -27,8 +29,17 @@ class PocketConfig:
     identity_database: str | None = None
     native_release: str | None = None
     identity_file: tuple[int,int] | None = None
+    additional_allowed_subs: tuple[str, ...] = ()
+
+    def allows_subject(self, subject):
+        return isinstance(subject, str) and subject in (self.allowed_sub, *self.additional_allowed_subs)
 
     def __post_init__(self):
+        if type(self.additional_allowed_subs) is not tuple or any(
+            not isinstance(sub, str) or not sub or sub.startswith('client-')
+            for sub in self.additional_allowed_subs
+        ):
+            raise ValueError('Explicit immutable additional user subjects required')
         if not isinstance(self.allowed_sub, str) or not self.allowed_sub or self.allowed_sub.startswith('client-'):
             raise ValueError('Explicit immutable user subject required')
         if not isinstance(self.client_id, str) or not self.client_id or '://' in self.client_id:
@@ -107,7 +118,7 @@ class PocketVerifier(TokenVerifier):
                 return None
             claims = jwt.decode(token,matches[0].key,algorithms=['RS256'],issuer=PUBLIC,audience=PUBLIC,
                 options={'require':['iss','aud','sub','exp','iat','jti','client_id']}, leeway=0)
-            if claims['sub'] != self.config.allowed_sub or claims['client_id'] != self.config.client_id or claims.get('scope') != 'openid':
+            if not self.config.allows_subject(claims['sub']) or claims['client_id'] != self.config.client_id or claims.get('scope') != 'openid':
                 return None
             audience = claims['aud'] if isinstance(claims['aud'],list) else [claims['aud']]
             if set(audience) != {PUBLIC,self.config.client_id}:
@@ -119,7 +130,7 @@ class PocketVerifier(TokenVerifier):
                 return None
             r = await self.http.get(PUBLIC+'/api/oidc/userinfo',headers={'Authorization':'Bearer '+token})
             r.raise_for_status()
-            if r.json().get('sub') != self.config.allowed_sub:
+            if r.json().get('sub') != claims['sub']:
                 return None
             provenance = self.status.grant(token,claims)
             if provenance is None:
@@ -381,6 +392,8 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
     app = build_app(ServerConfig(issuer_url=PUBLIC,public_origin=PUBLIC),ResourceVerifier(provider))
     app.router.routes[0:0] = [r for r in provider.get_routes('/mcp') if not r.path.startswith('/.well-known/oauth-protected-resource')]
     app.state.provider = provider
+    enrollment = EnrollmentStore(Path(directory) / 'enrollment.sqlite')
+    app.state.enrollment = enrollment
     http = httpx.AsyncClient(transport=pocket_transport or PocketTransport(config, PUBLIC_PATHS),
         trust_env=False,follow_redirects=False,timeout=5)
 
@@ -388,6 +401,31 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
         path = request.url.path
         if not public_path(path,request.method):
             return Response(status_code=404)
+        exchange = re.fullmatch(r'/api/one-time-access-token/([A-Za-z0-9]{12})', path)
+        registering = path in {'/api/webauthn/register/start', '/api/webauthn/register/finish'}
+        expected_subject = None
+        session = request.cookies.get('__Host-access_token', '')
+        if exchange or registering:
+            if request.method == 'POST' and request.headers.get('origin') != PUBLIC:
+                return Response(status_code=403, headers={'Cache-Control': 'no-store'})
+            if request.headers.get('sec-fetch-site') == 'cross-site':
+                return Response(status_code=403, headers={'Cache-Control': 'no-store'})
+            try:
+                if exchange:
+                    expected_subject = enrollment.pending(exchange[1])
+                    allowed = bool(expected_subject) and verifier.status.initial_enrollment_allowed(expected_subject)
+                else:
+                    expected_subject = enrollment.subject(session)
+                    allowed = False
+                    if expected_subject:
+                        owner = await http.get(PUBLIC + '/api/users/me',
+                                               headers={'Cookie': request.headers.get('cookie', '')})
+                        allowed = (owner.status_code == 200 and owner.json().get('id') == expected_subject and
+                                   verifier.status.initial_enrollment_allowed(expected_subject))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error, httpx.HTTPError):
+                allowed = False
+            if not allowed:
+                return Response(status_code=403, headers={'Cache-Control': 'no-store'})
         async def interaction_allowed(iid):
             try:
                 q=verifier.status.interaction(iid)
@@ -401,7 +439,7 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
                     return False
                 if path.endswith('/complete'):
                     owner=await http.get(PUBLIC+'/api/users/me',headers={'Cookie':request.headers.get('cookie','')})
-                    if owner.status_code!=200 or owner.json().get('id')!=config.allowed_sub:
+                    if owner.status_code!=200 or not config.allows_subject(owner.json().get('id')):
                         return False
                 # Re-read after awaits to deny status/schema/provenance drift.
                 return verifier.status.interaction(iid)==q
@@ -433,14 +471,43 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
                         return Response(status_code=413)
         except TimeoutError:
             return Response(status_code=408)
-        headers=[(k,v) for k,v in request.headers.raw if k.lower() in {b'content-type',b'cookie',b'origin',b'accept'}]
+        if path == '/api/webauthn/register/finish':
+            # Atomic across processes. A timeout/crash leaves this blocked until
+            # a private operator issues a fresh invitation after checking status.
+            try:
+                reserved = enrollment.reserve_finish(session)
+            except sqlite3.Error:
+                reserved = False
+            if not reserved:
+                return Response(status_code=403, headers={'Cache-Control': 'no-store'})
+        headers=[(k,v) for k,v in request.headers.raw if k.lower() in {b'content-type',b'origin',b'accept'}]
+        # Always override HTTPX's shared cookie jar, including anonymous requests.
+        # Clearing the jar is unsafe because concurrent browsers race.
+        headers.append((b'cookie', request.headers.get('cookie', '').encode('latin-1')))
         r=await http.request(request.method,PUBLIC+path+('?' + request.url.query if request.url.query else ''),content=bytes(body),headers=headers)
+        if exchange and r.status_code == 200:
+            try:
+                native_session = r.cookies.get('__Host-access_token', '')
+                bound = (r.json().get('id') == expected_subject and
+                         verifier.status.initial_enrollment_allowed(expected_subject) and
+                         enrollment.bind(exchange[1], expected_subject, native_session))
+            except (OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
+                bound = False
+            if not bound:
+                return Response(status_code=403, headers={'Cache-Control': 'no-store'})
+        if path == '/api/webauthn/register/finish' and r.status_code == 200:
+            enrollment.close_grant(session)
         content = style_sign_in(path, r.headers.get('content-type', ''), r.content)
         response=Response(content,status_code=r.status_code)
         excluded = {b'connection', b'transfer-encoding', b'content-length', b'content-encoding'}
         if content != r.content:
             excluded |= {b'etag', b'last-modified'}
         response.raw_headers=[(k,v) for k,v in r.headers.raw if k.lower() not in excluded]
+        if exchange or registering or path.startswith('/lc/') or path in {
+            '/login/alternative', '/login/alternative/code', '/signup/add-passkey'
+        }:
+            response.headers['Cache-Control'] = 'no-store'
+            response.headers['Referrer-Policy'] = 'strict-origin'
         return response
 
     app.router.routes.append(Route('/{rest:path}',pocket,methods=['GET','POST']))
@@ -456,6 +523,7 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
             await http.aclose()
             await verifier.aclose()
             await provider.pocket_transport.aclose()
+            enrollment.close()
             provider.disk._cache.close()
             provider.ledger.db.close()
     app.router.lifespan_context=lifespan
@@ -480,6 +548,18 @@ def public_path(path,method):
     import re
     if path in PUBLIC_PATHS:
         return method=='GET' or path in {'/api/webauthn/login/start','/api/webauthn/login/finish','/api/webauthn/logout'} and method=='POST'
+    # Admin-created long login codes only. Pocket owns expiry, single use and
+    # exchange rate limits; signup and code-creation APIs remain private.
+    if re.fullmatch(r'/lc/[A-Za-z0-9]{12}', path):
+        return method == 'GET'
+    if path in {'/login/alternative', '/login/alternative/code', '/signup/add-passkey'}:
+        return method == 'GET'
+    if re.fullmatch(r'/api/one-time-access-token/[A-Za-z0-9]{12}', path):
+        return method == 'POST'
+    if path == '/api/webauthn/register/start':
+        return method == 'GET'
+    if path == '/api/webauthn/register/finish':
+        return method == 'POST'
     if path in ('/app.webmanifest','/favicon.ico','/favicon.png','/favicon.svg'):
         return method=='GET'
     if re.fullmatch(r'/img/[A-Za-z0-9_./-]+\.(png|svg|jpg|webp|ico)', path):

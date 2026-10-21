@@ -25,6 +25,23 @@ Approve the Carpark request, then sign in with your Pocket ID passkey.
 Grok handles token refresh. In the tested setup, each successful refresh renews a
 30-day window; you should not need to sign in each day.
 
+## Invite another user
+
+Create an ordinary user through Pocket's private admin interface, then issue a
+20-minute login code. Share its link privately so they can create their first
+passkey on their own device. No password is needed. Email can be omitted only
+when the instance's **Require User Email** policy is off; keep public signup disabled.
+
+The bridge also requires an operator-approved enrollment grant for that code.
+A Pocket login code alone is not enough. See [AGENTS.md](AGENTS.md#invitation-enrollment)
+for the private operator steps and expiry rules.
+
+To let the invited account use MCP, add its immutable Pocket user ID to
+`CARPARK_ADDITIONAL_ALLOWED_SUBS` in the private server environment and restart.
+The owner in `CARPARK_ALLOWED_SUB` stays allowed. Other Pocket users, including
+onboarding test accounts, remain denied. Restart the connector's authorization
+flow after changing access; do not reuse a failed consent page.
+
 ## Run your own server
 
 You need Python 3.11–3.14, `uv`, Pocket ID v2.17.0, and a public HTTPS route to the
