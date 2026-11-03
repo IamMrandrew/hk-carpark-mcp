@@ -240,6 +240,7 @@ def test_metered_tool_registration_and_calls():
                 "get_carpark_vacancies",
                 "search_metered_spaces",
                 "get_metered_occupancy",
+                "search_parking",
             }
             assert all(t.annotations.readOnlyHint and not t.annotations.destructiveHint for t in listing)
             _, result = await mcp.call_tool("search_metered_spaces", {"query": "測試道"})

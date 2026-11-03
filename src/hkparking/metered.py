@@ -1,10 +1,8 @@
 """Bounded official metered-space CSV queries; change time is not observation time."""
 
 import asyncio
-import base64
 import csv
 import io
-import json
 import re
 import time
 from datetime import UTC, date, datetime
@@ -13,7 +11,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .client import UpstreamError, UpstreamResult
-from .service import CatalogSnapshot, bounded_text, digest
+from .service import CatalogSnapshot, bounded_text, digest, matching_items, paginate
 
 SPACE_INFO_URL = "https://resource.data.one.gov.hk/td/psiparkingspaces/spaceinfo/parkingspaces.csv"
 OCCUPANCY_URL = "https://resource.data.one.gov.hk/td/psiparkingspaces/occupancystatus/occupancystatus.csv"
@@ -44,6 +42,8 @@ INFO_FIELDS = (
     "TimeUnit",
     "PaymentUnit",
 )
+METERED_TEXT_FIELDS = INFO_FIELDS[2:17]
+METERED_DISTRICT_FIELDS = ("District", "District_tc", "District_sc")
 OCCUPANCY_FIELDS = ("ParkingSpaceId", "ParkingMeterStatus", "OccupancyStatus", "OccupancyDateChanged")
 
 
@@ -166,44 +166,17 @@ class MeteredParkingService:
         if cursor is not None and (not isinstance(cursor, str) or not cursor or len(cursor) > 1024):
             raise ValueError("Invalid pagination cursor")
         snapshot = await self.catalog()
-        matched = []
-        for row in snapshot.items:
-            text = " ".join(row[k] for k in INFO_FIELDS[2:17]).casefold()
-            district_text = " ".join(row[k] for k in ("District", "District_tc", "District_sc")).casefold()
-            if all(term in text for term in query.split()) and (
-                district is None or all(term in district_text for term in district.split())
-            ):
-                matched.append(row)
-        binding, offset = digest(["metered", query, district]), 0
-        if cursor:
-            try:
-                payload = json.loads(
-                    base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
-                )
-                if (
-                    not isinstance(payload, dict)
-                    or payload.get("v") != 1
-                    or payload.get("q") != binding
-                    or payload.get("snapshot") != snapshot.fingerprint
-                    or type(payload.get("offset")) is not int
-                    or not 0 <= payload["offset"] < len(matched)
-                ):
-                    raise ValueError()
-                offset = payload["offset"]
-            except (ValueError, TypeError, UnicodeError):
-                raise ValueError("Invalid, mismatched or expired cursor; restart the search") from None
-        items = matched[offset : offset + limit]
-        next_offset = offset + len(items)
-        more = next_offset < len(matched)
-        payload = {"v": 1, "q": binding, "snapshot": snapshot.fingerprint, "offset": next_offset}
+        matched = matching_items(
+            snapshot.items, query, district, METERED_TEXT_FIELDS, METERED_DISTRICT_FIELDS
+        )
+        binding = digest(["metered", query, district])
+        items, more, next_cursor = paginate(matched, limit, cursor, binding, snapshot.fingerprint)
         return {
             "items": items,
             "total": len(matched),
             "returned": len(items),
             "has_more": more,
-            "next_cursor": base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-            if more
-            else None,
+            "next_cursor": next_cursor,
             "catalog_fetched_at": snapshot.fetched_at.isoformat(),
             "source_urls": list(snapshot.sources),
             "disclaimer": "Location and tariff data only, not availability. Some meters may not yet be commissioned.",

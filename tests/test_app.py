@@ -275,6 +275,7 @@ def test_authenticated_tools_share_upstream_until_serving_loop_shutdown():
                 "get_carpark_vacancies",
                 "search_metered_spaces",
                 "get_metered_occupancy",
+                "search_parking",
             }
             assert all(tool["annotations"]["readOnlyHint"] for tool in listing["tools"])
             assert all(not tool["annotations"]["destructiveHint"] for tool in listing["tools"])
@@ -374,7 +375,7 @@ def test_request_body_at_64_kib_is_accepted():
         ):
             response = await http.post("/mcp", content=body, headers=headers)
         assert response.status_code == 200
-        assert len(response.json()["result"]["tools"]) == 4
+        assert len(response.json()["result"]["tools"]) == 5
 
     asyncio.run(check())
 
@@ -449,7 +450,7 @@ def test_official_sdk_client_over_real_loopback_socket():
                 await session.initialize()
                 listing = await session.list_tools()
                 assert {tool.name for tool in listing.tools} == {
-                    "search_carparks", "get_carpark_vacancies", "search_metered_spaces", "get_metered_occupancy"
+                    "search_carparks", "get_carpark_vacancies", "search_metered_spaces", "get_metered_occupancy", "search_parking"
                 }
                 found = await session.call_tool("search_carparks", {"query": "Synthetic"})
                 assert not found.isError
@@ -464,6 +465,11 @@ def test_official_sdk_client_over_real_loopback_socket():
                 assert not occupied.isError
                 record = occupied.structuredContent["items"][0]["record"]
                 assert record["reported_status"] == "vacant" and record["current_status"] == "unknown"
+                shared = await session.call_tool("search_parking", {"query": "Synthetic", "limit": 2})
+                assert not shared.isError
+                assert [row["parking_type"] for row in shared.structuredContent["items"]] == ["carpark", "metered"]
+                invalid_type = await session.call_tool("search_parking", {"query": "Synthetic", "parking_type": "meter"})
+                assert invalid_type.isError
                 assert session_id() is None
                 assert not upstream.close_loops
         finally:

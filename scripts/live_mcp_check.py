@@ -121,7 +121,7 @@ def main():
             await session.initialize()
             tools = await session.list_tools()
             assert {t.name for t in tools.tools} == {
-                "search_carparks", "get_carpark_vacancies", "search_metered_spaces", "get_metered_occupancy"
+                "search_carparks", "get_carpark_vacancies", "search_metered_spaces", "get_metered_occupancy", "search_parking"
             }
 
             async def call(name, args):
@@ -130,6 +130,8 @@ def main():
                 assert result.structuredContent is not None
                 return result.structuredContent
 
+            shared = await call("search_parking", {"query": "Tsuen Wan", "limit": 2})
+            assert [row["parking_type"] for row in shared["items"]] == ["carpark", "metered"]
             exact_colloquial = await call("search_carparks", {"query": "荃灣多層停車場"})
             broad = await call("search_carparks", {"query": "荃灣", "limit": 2})
             items = list(broad["items"])
@@ -177,6 +179,7 @@ def main():
                         "verified_at": datetime.now(UTC).isoformat(),
                         "upstream_environment_settings": args.use_env_proxy,
                         "auth": "401 without token; authenticated SDK initialize/list/call succeeded",
+                        "shared_search_totals": shared["totals"],
                         "metered_search_total": meters["total"],
                         "metered_occupancy": occupancy,
                         "input_validation": "arbitrary URL rejected",

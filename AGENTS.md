@@ -30,8 +30,8 @@ is disabled. Do not expose management APIs to fix UI links that fail at the prox
 | File under `src/hkparking/` | Responsibility |
 |---|---|
 | `deployment.py`, `config.py` | Validated startup settings and public/listener boundaries. |
-| `app.py`, `tools.py` | MCP transport, token checks and the four tool registrations. |
-| `client.py`, `service.py`, `vacancy.py`, `metered.py` | Fixed government endpoints, search/cache and record interpretation. |
+| `app.py`, `tools.py` | MCP transport, token checks and the five tool registrations. |
+| `client.py`, `service.py`, `vacancy.py`, `metered.py`, `search.py` | Fixed government endpoints, search/cache and record interpretation. |
 | `auth/runtime.py`, `auth/__main__.py` | Environment-only packaged entry point. |
 | `auth/integration.py` | Pocket transport, identity checks, native route proxy and refresh lifetime. |
 | `auth/policy.py`, `auth/bridge.py` | Request policy and SDK-backed OAuth operations. |
@@ -123,6 +123,25 @@ Keep TLS verification, no redirects and a 10-second timeout. Retain the car park
 exceeds 4 MiB. No user-supplied URLs or additional destinations. Validate JSON shape/IDs.
 The parking tools do not accept arbitrary URLs, scrape other feeds beyond these fixed resources, access files,
 run shell commands or use an LLM to rank/select matches.
+
+### `search_parking(query, district=null, parking_type="all", limit=10, cursor=null)`
+
+Preferred shared entry point. `parking_type` is exactly carpark/metered/all with
+all as the schema fallback; descriptions instruct the agent to explicitly choose
+carpark for 停車場 / car park, metered for 咪錶位 / 咪錶停車場, and all for broad
+parking-place requests. Do not add an intent classifier or claim model behavior
+was verified by testing descriptions. This remains keyword search, not nearest.
+
+Keep legacy searches unchanged for compatibility. Reuse their matcher and pager.
+Return source fields with parking_type labels, plus per-selected-type totals and
+catalogue fetch times. Preserve park_Id vs ParkingSpaceId; detail tools stay separate.
+Interleave the complete sorted match streams carpark-first, then slice the page.
+Limit is TOTAL 1–50. Round-robin continues across pages including limit=1 and odd
+limits; when a source ends, fill with the other. Totals count carparks vs spaces.
+Cursors bind query, district, selected type and selected catalogue fingerprints.
+All-mode must error if either selected source fails, never silently return partial
+coverage. Single-type mode must not fetch the unselected source. Do not reuse one
+source's cursor for the combined search or mix it with legacy cursors.
 
 ### `search_carparks(query, district=null, limit=10, cursor=null)`
 
