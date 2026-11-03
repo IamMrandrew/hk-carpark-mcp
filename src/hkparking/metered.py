@@ -106,7 +106,8 @@ class MeteredClient:
                         if size > self.max_bytes:
                             raise UpstreamError("Official metered parking feed exceeds size limit")
                         chunks.append(chunk)
-            records = parse_csv(b"".join(chunks), kind)
+            # Full feeds contain ~20,000 rows; parsing must not hold the auth serving loop.
+            records = await asyncio.to_thread(parse_csv, b"".join(chunks), kind)
         except (httpx.HTTPError, TimeoutError):
             raise UpstreamError("Official metered parking feed request failed or timed out") from None
         return UpstreamResult(records, url, datetime.now(UTC))
@@ -151,8 +152,9 @@ class MeteredParkingService:
                 return self._catalog
             result = await self.gateway.fetch("info")
             items = tuple(sorted(result.records, key=lambda row: row["ParkingSpaceId"]))
+            fingerprint = await asyncio.to_thread(digest, items)
             self._catalog = CatalogSnapshot(
-                items, result.fetched_at, self.monotonic(), digest(items), (result.source_url,)
+                items, result.fetched_at, self.monotonic(), fingerprint, (result.source_url,)
             )
             return self._catalog
 

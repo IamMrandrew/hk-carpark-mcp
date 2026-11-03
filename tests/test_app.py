@@ -457,6 +457,13 @@ def test_official_sdk_client_over_real_loopback_socket():
                 vacancies = await session.call_tool("get_carpark_vacancies", {"carpark_ids": ["synthetic1"]})
                 assert not vacancies.isError
                 assert vacancies.structuredContent["items"][0]["records"][0]["current_count"] is None
+                meters = await session.call_tool("search_metered_spaces", {"query": "測試道"})
+                assert not meters.isError
+                assert meters.structuredContent["items"][0]["ParkingSpaceId"] == "123A"
+                occupied = await session.call_tool("get_metered_occupancy", {"parking_space_ids": ["123A"]})
+                assert not occupied.isError
+                record = occupied.structuredContent["items"][0]["record"]
+                assert record["reported_status"] == "vacant" and record["current_status"] == "unknown"
                 assert session_id() is None
                 assert not upstream.close_loops
         finally:

@@ -248,3 +248,71 @@ def test_metered_tool_registration_and_calls():
             assert result["items"][0]["record"]["reported_status"] == "vacant"
 
     asyncio.run(run())
+
+
+def test_full_feed_parse_and_fingerprint_leave_serving_thread(monkeypatch):
+    """Check scheduling placement, not a machine-specific timing threshold."""
+    import threading
+
+    import hkparking.metered as module
+
+    async def run():
+        serving_thread = threading.get_ident()
+        original_parse, original_digest = module.parse_csv, module.digest
+        workers = []
+
+        def parse(content, kind):
+            workers.append(threading.get_ident())
+            assert workers[-1] != serving_thread
+            return original_parse(content, kind)
+
+        def fingerprint(items):
+            workers.append(threading.get_ident())
+            assert workers[-1] != serving_thread
+            return original_digest(items)
+
+        monkeypatch.setattr(module, "parse_csv", parse)
+        monkeypatch.setattr(module, "digest", fingerprint)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=csv_bytes([space()]))
+        )) as http:
+            service = MeteredParkingService(MeteredClient(http))
+            assert len((await service.catalog()).items) == 1
+        assert len(workers) == 2
+
+    asyncio.run(run())
+
+
+def test_concurrent_catalog_readers_share_one_fetch():
+    async def run():
+        release = asyncio.Event()
+
+        class SlowGateway(Gateway):
+            async def fetch(self, kind):
+                await release.wait()
+                return await super().fetch(kind)
+
+        gateway = SlowGateway()
+        service = MeteredParkingService(gateway)
+        readers = [asyncio.create_task(service.catalog()) for _ in range(10)]
+        await asyncio.sleep(0)
+        release.set()
+        snapshots = await asyncio.gather(*readers)
+        assert gateway.calls == ["info"]
+        assert all(snapshot is snapshots[0] for snapshot in snapshots)
+
+    asyncio.run(run())
+
+
+def test_failed_occupancy_fetch_never_reuses_previous_report():
+    async def run():
+        gateway = Gateway()
+        service = MeteredParkingService(gateway)
+        result = await service.get_metered_occupancy(["123A"])
+        assert result["items"][0]["record"]["reported_status"] == "vacant"
+        gateway.fail = True
+        with pytest.raises(UpstreamError, match="unavailable"):
+            await service.get_metered_occupancy(["123A"])
+        assert gateway.calls == ["info", "occupancy", "occupancy"]
+
+    asyncio.run(run())
