@@ -187,12 +187,18 @@ class FixtureGovernmentTransport(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request):
         from hkparking.client import ENDPOINT
+        from hkparking.metered import OCCUPANCY_URL, SPACE_INFO_URL
+        from tests.test_metered import csv_bytes, occupancy, space
 
         assert not self.close_loops, "Shared upstream transport was closed per MCP request"
-        assert str(request.url).split("?")[0] == ENDPOINT
+        assert str(request.url).split("?")[0] in (ENDPOINT, SPACE_INFO_URL, OCCUPANCY_URL)
         assert request.method == "GET"
         self.requests.append(request)
         self.request_loops.append(asyncio.get_running_loop())
+        if str(request.url) == SPACE_INFO_URL:
+            return httpx.Response(200, content=csv_bytes([space()]))
+        if str(request.url) == OCCUPANCY_URL:
+            return httpx.Response(200, content=csv_bytes([occupancy()], "occupancy"))
         if request.url.params["data"] == "info":
             record = {
                 "park_Id": "synthetic1",
@@ -267,6 +273,8 @@ def test_authenticated_tools_share_upstream_until_serving_loop_shutdown():
             assert {tool["name"] for tool in listing["tools"]} == {
                 "search_carparks",
                 "get_carpark_vacancies",
+                "search_metered_spaces",
+                "get_metered_occupancy",
             }
             assert all(tool["annotations"]["readOnlyHint"] for tool in listing["tools"])
             assert all(not tool["annotations"]["destructiveHint"] for tool in listing["tools"])
@@ -291,7 +299,20 @@ def test_authenticated_tools_share_upstream_until_serving_loop_shutdown():
                 {"name": "search_carparks", "arguments": {"query": "Synthetic", "limit": 500}},
             )
             assert invalid["isError"]
-            assert len(upstream.requests) == 3  # Shared bilingual catalog plus vacancy request.
+            meter_search = await rpc(
+                http, "tools/call", {"name": "search_metered_spaces", "arguments": {"query": "測試道"}}
+            )
+            assert not meter_search["isError"]
+            assert meter_search["structuredContent"]["items"][0]["ParkingSpaceId"] == "123A"
+            meter_occupancy = await rpc(
+                http,
+                "tools/call",
+                {"name": "get_metered_occupancy", "arguments": {"parking_space_ids": ["123A"]}},
+            )
+            assert not meter_occupancy["isError"]
+            record = meter_occupancy["structuredContent"]["items"][0]["record"]
+            assert record["reported_status"] == "vacant" and record["current_status"] == "unknown"
+            assert len(upstream.requests) == 5  # Bilingual carparks, vacancy, meter catalogue and occupancy.
             assert not upstream.close_loops
         assert upstream.close_loops == [serving_loop]
         assert all(loop is serving_loop for loop in upstream.request_loops)
@@ -353,7 +374,7 @@ def test_request_body_at_64_kib_is_accepted():
         ):
             response = await http.post("/mcp", content=body, headers=headers)
         assert response.status_code == 200
-        assert len(response.json()["result"]["tools"]) == 2
+        assert len(response.json()["result"]["tools"]) == 4
 
     asyncio.run(check())
 
@@ -427,7 +448,9 @@ def test_official_sdk_client_over_real_loopback_socket():
             ):
                 await session.initialize()
                 listing = await session.list_tools()
-                assert {tool.name for tool in listing.tools} == {"search_carparks", "get_carpark_vacancies"}
+                assert {tool.name for tool in listing.tools} == {
+                    "search_carparks", "get_carpark_vacancies", "search_metered_spaces", "get_metered_occupancy"
+                }
                 found = await session.call_tool("search_carparks", {"query": "Synthetic"})
                 assert not found.isError
                 assert found.structuredContent["items"][0]["park_Id"] == "synthetic1"

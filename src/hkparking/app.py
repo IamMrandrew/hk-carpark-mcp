@@ -17,6 +17,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .client import GovernmentClient
 from .config import ServerConfig
 from .deployment import SETTINGS
+from .metered import MeteredClient, MeteredParkingService
 from .service import ParkingService
 from .tools import register_tools
 
@@ -75,7 +76,7 @@ def build_app(
             validate_token_resource=True,
         ),
     )
-    register_tools(mcp, ParkingService(GovernmentClient(http)))
+    register_tools(mcp, ParkingService(GovernmentClient(http)), MeteredParkingService(MeteredClient(http)))
     app = mcp.streamable_http_app()
 
     @asynccontextmanager

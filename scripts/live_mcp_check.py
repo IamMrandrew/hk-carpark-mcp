@@ -2,8 +2,10 @@
 
 No public listener, tunnel, OAuth grant or persistent token; generated bearer stays in memory.
 Run with: uv run python scripts/live_mcp_check.py
+For a proxy-managed development VM, add --use-env-proxy (upstream HTTP only).
 """
 
+import argparse
 import asyncio
 import json
 import secrets
@@ -24,11 +26,18 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
 from hkparking.client import GovernmentClient
+from hkparking.metered import MeteredClient, MeteredParkingService
 from hkparking.service import ParkingService
 from hkparking.tools import register_tools
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--use-env-proxy", action="store_true",
+        help="Honor environment proxy/TLS settings for government requests in this smoke test only.",
+    )
+    args = parser.parse_args()
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen()
@@ -49,7 +58,7 @@ def main():
             )
 
     # Never reuse a Grok/MCP-auth client for upstream requests.
-    upstream_http = httpx.AsyncClient(trust_env=False, follow_redirects=False, timeout=10)
+    upstream_http = httpx.AsyncClient(trust_env=args.use_env_proxy, follow_redirects=False, timeout=10)
     service = ParkingService(GovernmentClient(upstream_http))
     mcp = FastMCP(
         "Parking live verification",
@@ -69,7 +78,7 @@ def main():
             allowed_origins=[base],
         ),
     )
-    register_tools(mcp, service)
+    register_tools(mcp, service, MeteredParkingService(MeteredClient(upstream_http)))
     app = mcp.streamable_http_app()
     original_lifespan = app.router.lifespan_context
 
@@ -103,13 +112,17 @@ def main():
             )
             assert response.status_code == 401
         async with (
-            httpx.AsyncClient(trust_env=False, headers={"Authorization": "Bearer " + token}) as authorized,
+            httpx.AsyncClient(
+                trust_env=False, timeout=30, headers={"Authorization": "Bearer " + token}
+            ) as authorized,
             streamable_http_client(base + "/mcp", http_client=authorized) as (read, write, _),
             ClientSession(read, write) as session,
         ):
             await session.initialize()
             tools = await session.list_tools()
-            assert {t.name for t in tools.tools} == {"search_carparks", "get_carpark_vacancies"}
+            assert {t.name for t in tools.tools} == {
+                "search_carparks", "get_carpark_vacancies", "search_metered_spaces", "get_metered_occupancy"
+            }
 
             async def call(name, args):
                 result = await session.call_tool(name, args)
@@ -148,12 +161,24 @@ def main():
             assert invalid.isError
             missing = await call("get_carpark_vacancies", {"carpark_ids": ["NONEXISTENT_SYNTHETIC_ID"]})
             assert missing["items"][0]["status"] == "not_found"
+            meters = await call("search_metered_spaces", {"query": "ISLAND ROAD", "limit": 2})
+            assert meters["items"], "Official meter search returned no matches"
+            meter_ids = [row["ParkingSpaceId"] for row in meters["items"]]
+            occupancy = await call("get_metered_occupancy", {"parking_space_ids": meter_ids})
+            assert all(row["status"] != "not_found" for row in occupancy["items"])
+            assert all(
+                row["record"] is None or row["record"]["current_status"] == "unknown"
+                for row in occupancy["items"]
+            )
             print(
                 json.dumps(
                     {
                         "event": "LIVE_MCP_CHECK_PASSED",
                         "verified_at": datetime.now(UTC).isoformat(),
+                        "upstream_environment_settings": args.use_env_proxy,
                         "auth": "401 without token; authenticated SDK initialize/list/call succeeded",
+                        "metered_search_total": meters["total"],
+                        "metered_occupancy": occupancy,
                         "input_validation": "arbitrary URL rejected",
                         "colloquial_exact_search_total": exact_colloquial["total"],
                         "broad_search_total": broad["total"],

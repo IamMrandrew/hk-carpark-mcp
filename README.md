@@ -1,15 +1,24 @@
 # Hong Kong Parking MCP
 
-Ask Grok to find Hong Kong car parks and check reported vacancies.
+Ask Grok to find Hong Kong car parks or on-street metered spaces and check reported availability.
 The server uses the government parking API and signs you in through Pocket ID.
 
 | Tool | What it does |
 |---|---|
 | `search_carparks` | Find car parks by Chinese or English name, address or district. |
 | `get_carpark_vacancies` | Check vacancies and when the source last updated them. |
+| `search_metered_spaces` | Find individual metered spaces by Chinese or English street, area or district. |
+| `get_metered_occupancy` | Check reported occupancy for exact metered-space IDs. |
 
 Try: **“Find car parks in Tsuen Wan and check their private-car vacancies.”**
 Availability can change before you arrive. Missing or stale counts stay marked as unknown.
+
+Try: **“Find metered parking on Island Road and check the reported occupancy.”**
+Meter data comes from the [Transport Department's official dataset](https://data.gov.hk/en-data/dataset/hk-td-msd_1-metered-parking-spaces-data).
+Location data is separate from occupancy. A meter's timestamp records its last
+occupancy change, not its last sensor observation, so sensor freshness and
+current availability remain unknown. Not-for-use meters are never shown as
+vacant. Check signs, vehicle restrictions and charges before parking.
 
 ## Connect Grok
 
