@@ -32,6 +32,52 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+CARPARK_TEXT_FIELDS = ("name_zh", "name_en", "address_zh", "address_en", "district_zh", "district_en")
+CARPARK_DISTRICT_FIELDS = ("district_zh", "district_en")
+
+
+def matching_items(items, query, district, text_fields, district_fields):
+    """Literal keyword matching shared by compatibility and combined searches."""
+    terms = query.split()
+    district_terms = district.split() if district else ()
+    matched = []
+    for item in items:
+        text = " ".join(item[k] or "" for k in text_fields).casefold()
+        district_text = " ".join(item[k] or "" for k in district_fields).casefold()
+        if all(term in text for term in terms) and all(term in district_text for term in district_terms):
+            matched.append(item)
+    return matched
+
+
+def paginate(items, limit, cursor, binding, fingerprint):
+    """Snapshot-bound deterministic pagination, shared without changing legacy cursors."""
+    offset = 0
+    if cursor:
+        try:
+            encoded = cursor + "=" * (-len(cursor) % 4)
+            payload = json.loads(base64.b64decode(encoded, altchars=b"-_", validate=True))
+            if (
+                not isinstance(payload, dict)
+                or payload.get("v") != 1
+                or payload.get("q") != binding
+                or payload.get("snapshot") != fingerprint
+                or type(payload.get("offset")) is not int
+                or not 0 <= payload["offset"] < len(items)
+            ):
+                raise ValueError()
+            offset = payload["offset"]
+        except (ValueError, TypeError, UnicodeDecodeError):
+            raise ValueError("Invalid, mismatched or expired cursor; restart the search") from None
+    selected = items[offset : offset + limit]
+    next_offset = offset + len(selected)
+    has_more = next_offset < len(items)
+    next_cursor = None
+    if has_more:
+        payload = {"v": 1, "q": binding, "snapshot": fingerprint, "offset": next_offset}
+        next_cursor = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    return selected, has_more, next_cursor
+
+
 class ParkingService:
     def __init__(self, gateway: GovernmentClient, catalog_ttl_seconds=3600, monotonic=time.monotonic):
         if not 0 < catalog_ttl_seconds <= 3600:
@@ -98,42 +144,10 @@ class ParkingService:
             raise ValueError("Invalid pagination cursor")
         snapshot = await self.catalog()
         binding = digest([query, district])
-        terms = query.split()
-        matched = []
-        for item in snapshot.items:
-            text = " ".join(
-                item[k] or ""
-                for k in ["name_zh", "name_en", "address_zh", "address_en", "district_zh", "district_en"]
-            ).casefold()
-            district_text = " ".join(item[k] or "" for k in ["district_zh", "district_en"]).casefold()
-            if all(term in text for term in terms) and (
-                district is None or all(term in district_text for term in district.split())
-            ):
-                matched.append(item)
-        offset = 0
-        if cursor:
-            try:
-                encoded = cursor + "=" * (-len(cursor) % 4)
-                payload = json.loads(base64.b64decode(encoded, altchars=b"-_", validate=True))
-                if (
-                    not isinstance(payload, dict)
-                    or payload.get("v") != 1
-                    or payload.get("q") != binding
-                    or payload.get("snapshot") != snapshot.fingerprint
-                    or type(payload.get("offset")) is not int
-                    or not 0 <= payload["offset"] < len(matched)
-                ):
-                    raise ValueError()
-                offset = payload["offset"]
-            except (ValueError, TypeError, UnicodeDecodeError):
-                raise ValueError("Invalid, mismatched or expired cursor; restart the search") from None
-        selected = matched[offset : offset + limit]
-        next_offset = offset + len(selected)
-        has_more = next_offset < len(matched)
-        next_cursor = None
-        if has_more:
-            payload = {"v": 1, "q": binding, "snapshot": snapshot.fingerprint, "offset": next_offset}
-            next_cursor = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+        matched = matching_items(
+            snapshot.items, query, district, CARPARK_TEXT_FIELDS, CARPARK_DISTRICT_FIELDS
+        )
+        selected, has_more, next_cursor = paginate(matched, limit, cursor, binding, snapshot.fingerprint)
         return {
             "items": selected,
             "total": len(matched),

@@ -1,15 +1,54 @@
 # Hong Kong Parking MCP
 
-Ask Grok to find Hong Kong car parks and check reported vacancies.
+Ask Grok to find Hong Kong car parks or on-street metered spaces and check reported availability.
 The server uses the government parking API and signs you in through Pocket ID.
 
 | Tool | What it does |
 |---|---|
-| `search_carparks` | Find car parks by Chinese or English name, address or district. |
+| `search_parking` | Preferred shared search; choose `carpark`, `metered` or `all` (default). |
+| `search_carparks` | Compatibility carpark-only search; unchanged arguments and response. |
 | `get_carpark_vacancies` | Check vacancies and when the source last updated them. |
+| `search_metered_spaces` | Compatibility meter-only search; unchanged arguments and response. |
+| `get_metered_occupancy` | Check reported occupancy for exact metered-space IDs. |
 
 Try: **“Find car parks in Tsuen Wan and check their private-car vacancies.”**
 Availability can change before you arrive. Missing or stale counts stay marked as unknown.
+
+Try: **“Find metered parking on Island Road and check the reported occupancy.”**
+Meter data comes from the [Transport Department's official dataset](https://data.gov.hk/en-data/dataset/hk-td-msd_1-metered-parking-spaces-data).
+Location data is separate from occupancy. A meter's timestamp records its last
+occupancy change, not its last sensor observation, so sensor freshness and
+current availability remain unknown. Not-for-use meters are never shown as
+vacant. Check signs, vehicle restrictions and charges before parking.
+
+## Shared search interface
+
+`search_parking(query, district=null, parking_type="all", limit=10, cursor=null)`
+
+- `query`: required nonblank keyword string, at most 120 characters.
+- `district`: optional nonblank district keywords, at most 80 characters.
+- `parking_type`: `carpark`, `metered`, or `all`. Omission defaults to `all`.
+- `limit`: integer 1–50, bounding the **total** items on the page, not each type.
+- `cursor`: use the returned `next_cursor` with the same query, district and type.
+
+The tool description asks the agent to choose explicitly: 「停車場」/ “car park”
+means `carpark`; 「咪錶位」/「咪錶停車場」 means `metered`; a broad request such as
+「附近有啲咩停車嘅地方」 means `all`. This is guidance for the agent, not a code
+classifier. Location keywords are still needed; search does not calculate distance.
+
+Each item has `parking_type` plus the original source fields: `park_Id` for a
+carpark or `ParkingSpaceId` for a metered space. Use those IDs with the existing
+`get_carpark_vacancies` or `get_metered_occupancy` tools; search is not availability.
+The response also includes `totals` by selected type, `total`, `returned`,
+`has_more`, `next_cursor`, per-type `catalog_fetched_at`, `source_urls`, `ordering`
+and `disclaimer`. Meter totals count individual spaces, not streets or facilities.
+
+All-mode alternates carpark then metered in each source's exact ID order, continuing
+with the remaining type when one ends. This is balanced listing, not relevance
+ranking. If a selected source fails, the whole search errors rather than silently
+returning incomplete coverage. A single-type search does not query the other source.
+Changed catalogue contents invalidate cursors. The two previous search tools remain
+available for compatibility; no existing tool arguments or response fields changed.
 
 ## Connect Grok
 

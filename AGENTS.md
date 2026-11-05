@@ -30,8 +30,8 @@ is disabled. Do not expose management APIs to fix UI links that fail at the prox
 | File under `src/hkparking/` | Responsibility |
 |---|---|
 | `deployment.py`, `config.py` | Validated startup settings and public/listener boundaries. |
-| `app.py`, `tools.py` | MCP transport, token checks and the two tool registrations. |
-| `client.py`, `service.py`, `vacancy.py` | Fixed government endpoint, search/cache and record interpretation. |
+| `app.py`, `tools.py` | MCP transport, token checks and the five tool registrations. |
+| `client.py`, `service.py`, `vacancy.py`, `metered.py`, `search.py` | Fixed government endpoints, search/cache and record interpretation. |
 | `auth/runtime.py`, `auth/__main__.py` | Environment-only packaged entry point. |
 | `auth/integration.py` | Pocket transport, identity checks, native route proxy and refresh lifetime. |
 | `auth/policy.py`, `auth/bridge.py` | Request policy and SDK-backed OAuth operations. |
@@ -112,10 +112,36 @@ null/foreign origins denied. Consent keeps no-store and frame protection.
 
 ## Parking tool contract
 
-Only call `GET https://api.data.gov.hk/v1/carpark-info-vacancy`. Keep TLS verification,
-no redirects, a 10-second timeout and a 4 MiB response cap. Validate JSON shape/IDs.
-The parking tools do not accept arbitrary URLs, scrape other feeds, access files,
+The car park client only calls `GET https://api.data.gov.hk/v1/carpark-info-vacancy`.
+The separate metered client only calls these two official CSV resources:
+
+- `https://resource.data.one.gov.hk/td/psiparkingspaces/spaceinfo/parkingspaces.csv`
+- `https://resource.data.one.gov.hk/td/psiparkingspaces/occupancystatus/occupancystatus.csv`
+
+Keep TLS verification, no redirects and a 10-second timeout. Retain the car park
+4 MiB response cap; metered feeds have an 8 MiB cap because the live catalogue
+exceeds 4 MiB. No user-supplied URLs or additional destinations. Validate JSON shape/IDs.
+The parking tools do not accept arbitrary URLs, scrape other feeds beyond these fixed resources, access files,
 run shell commands or use an LLM to rank/select matches.
+
+### `search_parking(query, district=null, parking_type="all", limit=10, cursor=null)`
+
+Preferred shared entry point. `parking_type` is exactly carpark/metered/all with
+all as the schema fallback; descriptions instruct the agent to explicitly choose
+carpark for 停車場 / car park, metered for 咪錶位 / 咪錶停車場, and all for broad
+parking-place requests. Do not add an intent classifier or claim model behavior
+was verified by testing descriptions. This remains keyword search, not nearest.
+
+Keep legacy searches unchanged for compatibility. Reuse their matcher and pager.
+Return source fields with parking_type labels, plus per-selected-type totals and
+catalogue fetch times. Preserve park_Id vs ParkingSpaceId; detail tools stay separate.
+Interleave the complete sorted match streams carpark-first, then slice the page.
+Limit is TOTAL 1–50. Round-robin continues across pages including limit=1 and odd
+limits; when a source ends, fill with the other. Totals count carparks vs spaces.
+Cursors bind query, district, selected type and selected catalogue fingerprints.
+All-mode must error if either selected source fails, never silently return partial
+coverage. Single-type mode must not fetch the unselected source. Do not reuse one
+source's cursor for the combined search or mix it with legacy cursors.
 
 ### `search_carparks(query, district=null, limit=10, cursor=null)`
 
@@ -150,6 +176,32 @@ Fresh age is -120 through 300 seconds inclusive. More future-dated records use
 future records keep reported values but expose unknown current status and null
 current count. Never present missing/stale data as a current vacancy count.
 
+### Metered on-street spaces
+
+`search_metered_spaces(query, district=null, limit=10, cursor=null)` uses the same
+bounded keyword and snapshot-bound pagination rules, sorted by ParkingSpaceId.
+Search region/district/subdistrict/street/section in all three supplied languages.
+Keep source field names, tariff strings and operating-period codes; do not infer
+current permission to park. Exclude internal test poles greater than 90000.
+CSV parsing accepts the official UTF-8 BOM and catalogue date/blank preamble,
+validates headers, row widths, IDs, duplicate IDs and geographic coordinates.
+Cache catalogue for at most one hour, never fall back to an expired snapshot.
+
+`get_metered_occupancy(parking_space_ids)` accepts 1–10 unique exact IDs, fetches
+uncached occupancy, joins to catalogue and distinguishes not_found from
+missing_occupancy. N means normal and NU means not for use; NU is never vacant.
+Preserve raw V/O and timestamp alongside reported_status. OccupancyDateChanged
+is a state-change time, NOT a last-observed time. Parse it in Asia/Hong_Kong;
+never apply the car park five-minute freshness rule. current_status and
+observation_freshness remain unknown because sensor freshness is not supplied.
+A recent fetch is not proof of a recent observation. Check road signs on arrival.
+
+Official sources: [dataset](https://data.gov.hk/en-data/dataset/hk-td-msd_1-metered-parking-spaces-data)
+and [TD specification](https://www.td.gov.hk/datagovhk_td/metered-parking-spaces-data/resources/en/dataspec/metered_parking_spaces_data_dataspec.pdf).
+The dataset also includes meters awaiting commissioning; a catalogue hit alone
+must not be described as usable parking. No auth/scopes or deployment changes
+are needed for these read-only tools.
+
 ## Appearance and rollback
 
 Consent uses a centred compact app-to-server row, short icon labels, left-aligned
@@ -177,8 +229,13 @@ uv run ruff check src tests
 uv run python scripts/live_mcp_check.py
 ```
 
-The live check uses preview auth and the government API; it does not verify Pocket
-or Grok. Preview grants are in-memory and disappear on restart; a new public origin
+The live check uses preview auth and the government APIs; it does not verify Pocket
+or Grok. On a proxy-managed development VM, add `--use-env-proxy` to the smoke
+command and install `socksio` in that disposable environment if its proxy uses
+SOCKS. This explicitly honors environment proxy/TLS settings for smoke-test
+upstream traffic only; loopback traffic remains direct. Production `build_app`
+continues to ignore ambient proxy settings. A smoke pass with this flag does not
+validate the unmodified production network path in that VM. Preview grants are in-memory and disappear on restart; a new public origin
 needs its own client authorization.
 
 For the separate native lifecycle, set `POCKET_TEST_BINARY` to the checksum-pinned

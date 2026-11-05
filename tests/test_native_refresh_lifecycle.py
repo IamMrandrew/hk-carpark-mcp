@@ -189,7 +189,9 @@ def test_real_native_refresh_expiry_rotation_and_restart(private_native_root):
                 assert claims['exp'] - time.time() > 86400, 'real native lifetime truncated to one hour'
                 response = await mcp_list(http, tokens['access_token'])
                 assert response.status_code == 200
-                assert {t['name'] for t in response.json()['result']['tools']} == {'search_carparks', 'get_carpark_vacancies'}
+                assert {t['name'] for t in response.json()['result']['tools']} == {
+                    'search_carparks', 'get_carpark_vacancies', 'search_metered_spaces', 'get_metered_occupancy', 'search_parking'
+                }
                 if os.environ.get('CARPARK_TEST_LIVE_GOVERNMENT') == '1':
                     result = await http.post('/mcp', headers={
                         'Authorization': 'Bearer ' + tokens['access_token'],
