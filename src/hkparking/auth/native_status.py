@@ -51,13 +51,25 @@ class NativeStatus:
         with self.snapshot() as db:
             return db.execute('SELECT disabled FROM users WHERE id=?',(self._config.allowed_sub,)).fetchall()==[(0,)]
 
+    def initial_enrollment_allowed(self, user_id):
+        """Only the first passkey of an enabled ordinary account is public."""
+        if not isinstance(user_id, str) or not user_id or len(user_id) > 128:
+            return False
+        with self.snapshot() as db:
+            if db.execute('SELECT disabled,is_admin FROM users WHERE id=?',
+                          (user_id,)).fetchall() != [(0, 0)]:
+                return False
+            return db.execute('SELECT 1 FROM webauthn_credentials WHERE user_id=? LIMIT 1',
+                              (user_id,)).fetchone() is None
+
     def client_policy(self,db):
         row=db.execute('SELECT callback_urls,is_public,pkce_enabled,client_type FROM oidc_clients WHERE id=?',(self._config.client_id,)).fetchone()
         return row is not None and json.loads(row[0])==[SETTINGS.public_origin+'/auth/callback'] and row[1:]==(0,1,'standard')
 
     def grant(self,token,claims):
         with self.snapshot() as db:
-            if db.execute('SELECT disabled FROM users WHERE id=?',(self._config.allowed_sub,)).fetchall()!=[(0,)] or not self.client_policy(db):
+            if (not self._config.allows_subject(claims.get('sub')) or
+                    db.execute('SELECT disabled FROM users WHERE id=?',(claims['sub'],)).fetchall()!=[(0,)] or not self.client_policy(db)):
                 return None
             # Native Store keys JWT access sessions by signature (verified with a
             # fresh actual native token); request_id is the stable grant identity.
@@ -81,7 +93,7 @@ class NativeStatus:
             if len(rows)!=1:
                 return None
             client,scopes,owner,parameters=rows[0]
-            if client!=self._config.client_id or json.loads(scopes)!=['openid'] or owner not in (None,self._config.allowed_sub):
+            if client!=self._config.client_id or json.loads(scopes)!=['openid'] or (owner is not None and not self._config.allows_subject(owner)):
                 return None
             return json.loads(parameters)
 
@@ -93,10 +105,8 @@ class NativeStatus:
         if not isinstance(token,str) or not token or len(token)>16384:
             return None
         with self.snapshot() as db:
-            if (expected is not None and expected[:2]!=(self._config.allowed_sub,self._config.client_id)
+            if (expected is not None and (not self._config.allows_subject(expected[0]) or expected[1]!=self._config.client_id)
                     or not self.client_policy(db)):
-                return None
-            if db.execute('SELECT disabled FROM users WHERE id=?',(self._config.allowed_sub,)).fetchall()!=[(0,)]:
                 return None
             # Pinned v2.17.0 binary stores oauth2_sessions.expires_at as INTEGER
             # Unix epoch seconds (verified on the publisher-verified fixture).
@@ -108,9 +118,14 @@ class NativeStatus:
             if len(rows)!=1:
                 return None
             grant,client,raw,deadline=rows[0];data=json.loads(raw)
+            subject = data.get('session',{}).get('subject')
+            if (not self._config.allows_subject(subject) or
+                    db.execute('SELECT disabled FROM users WHERE id=?',(subject,)).fetchall()!=[(0,) ] or
+                    expected is not None and subject != expected[0]):
+                return None
             valid = (isinstance(grant,str) and bool(grant) and client==self._config.client_id
                 and data.get('client_id')==client and data.get('id')==grant
-                and data.get('session',{}).get('subject')==self._config.allowed_sub
+                and data.get('session',{}).get('subject')==subject
                 and data.get('granted_scope')==['openid']
                 and (expected is None or hashlib.sha256(grant.encode()).hexdigest()==expected[2]))
             return deadline if valid else None

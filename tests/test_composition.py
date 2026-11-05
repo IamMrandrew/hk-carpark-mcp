@@ -32,8 +32,9 @@ def test_composition_discovery_routes_boundary_and_registration(tmp_path):
             assert (await c.get('/.well-known/openid-configuration')).json()['authorization_endpoint']==PUBLIC+'/authorize'
             assert (await c.get('/')).json()['owner']=='pocket'
             assert (await c.get('/api/webauthn/login/start')).status_code==200
-            for path in ['/setup','/setup/','/signup','/lc/a','/settings/admin','/api/users','/api/users/initial','/api/oidc/clients','/api/one-time-access-token','/api/oidc/par','/api/oidc/device/authorize','/api/unknown','/api/webauthn/register/start']:
+            for path in ['/setup','/setup/','/signup','/lc/a','/settings/admin','/api/users','/api/users/initial','/api/oidc/clients','/api/one-time-access-token','/api/oidc/par','/api/oidc/device/authorize','/api/unknown']:
                 assert (await c.get(path)).status_code==404,path
+            assert (await c.get('/api/webauthn/register/start')).status_code == 403
             assert (await c.get('/authorize',params={'client_id':'attacker'})).status_code==400
             assert (await c.get('/authorize',params={'client_id':cfg.client_id,'scope':'parking:read','code_challenge_method':'plain'})).status_code==400
             q={'client_id':cfg.client_id,'redirect_uri':PUBLIC+'/auth/callback','response_type':'code','scope':'openid','state':'fixture','code_challenge':'x'*43,'code_challenge_method':'S256'}

@@ -72,6 +72,17 @@ def test_runtime_rejects_missing_or_invalid_values(tmp_path,name,value):
         RuntimeConfig.from_env(env)
 
 
+def test_runtime_additional_subjects_are_explicit(tmp_path):
+    env = runtime_env(tmp_path)
+    assert RuntimeConfig.from_env(env).additional_allowed_subs == ()
+    env['CARPARK_ADDITIONAL_ALLOWED_SUBS'] = '["SYNTHETIC-friend"]'
+    assert RuntimeConfig.from_env(env).additional_allowed_subs == ('SYNTHETIC-friend',)
+    for invalid in ['null', '{}', '"any"', '[""]', '[1]', '["client-machine"]', 'not-json']:
+        env['CARPARK_ADDITIONAL_ALLOWED_SUBS'] = invalid
+        with pytest.raises(ValueError):
+            RuntimeConfig.from_env(env)
+
+
 def test_alternate_environment_preserves_refresh_and_header_policy(tmp_path):
     # Fresh process: deployment settings are intentionally fixed at startup.
     env={key:value for key,value in os.environ.items() if not key.startswith('CARPARK_')}

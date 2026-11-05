@@ -51,6 +51,7 @@ Use the README startup command and source only a trusted private environment fil
 - `CARPARK_LISTEN_PORT`, `CARPARK_POCKET_PORT`: valid TCP ports; defaults `8767` and `14110`. Listen host remains `127.0.0.1`.
 - `CARPARK_STATE_DIR`, `CARPARK_POCKET_DATABASE`, `CARPARK_POCKET_CLIENT_SECRET_FILE`: absolute canonical paths. Reuse existing state and secret files during migration.
 - `CARPARK_POCKET_CLIENT_ID`, `CARPARK_ALLOWED_SUB`: existing private OIDC client and the immutable allowed owner subject.
+- `CARPARK_ADDITIONAL_ALLOWED_SUBS`: optional JSON array of additional immutable Pocket user IDs; defaults to `[]`. Resolve approved usernames privately; never commit real IDs. Consent, access-token and refresh checks must all use this policy and preserve per-user grant binding.
 - `CARPARK_POCKET_DB_DEVICE`, `CARPARK_POCKET_DB_INODE`: separately approved database file binding. Required; no guessed defaults.
 
 The secret file must be regular, not a symlink, at most 4096 bytes, nonempty, and
@@ -83,12 +84,55 @@ jobs is separate from this package. The current live host uses flat auth modules
 the PR adds a packaged startup path. Do not mix those import layouts during migration.
 Earlier commits contain previous host metadata; current placeholders do not erase history.
 
+## Invitation enrollment
+
+Use the private Pocket admin API to create an enabled non-admin user and issue
+`POST /api/users/{id}/one-time-access-token` with `{"ttl":"20m"}`. Never expose
+these management endpoints through the public proxy. Check whether the user
+already exists before creating one; never reset an existing passkey to retry.
+
+Approve the returned code locally with `EnrollmentStore` from `auth/enrollment.py`,
+using the running bridge's state directory and the user's immutable ID:
+
+```python
+# Run privately on the service host; values come from the authenticated admin API.
+# Keep real codes out of command arguments, source files, logs and shell history.
+store = EnrollmentStore(state_dir / "enrollment.sqlite")
+store.approve(code, user_id, min(native_expiry, int(time.time()) + 1190))
+assert store.pending(code) == user_id
+store.close()
+```
+
+Share `${CARPARK_PUBLIC_ORIGIN}/lc/<code>?redirect=%2Fsignup%2Fadd-passkey`
+privately. In Pocket v2.17.0, TTLs at most 15 minutes produce six-character codes;
+the stock UI may require twelve, so use the explicit 20-minute TTL. The CLI
+uses one hour and cannot set this expiry. Do not enable email recovery to work
+around the code-length difference. Normal approvals remain capped at 30 minutes.
+For a separately approved longer invitation, pass an explicit private
+`max_validity_seconds` override to `approve` (hard maximum 24 hours) and set both
+native TTL and bridge expiry to the same absolute deadline. This override is not
+exposed as a public request parameter; it does not change the normal default.
+
+The bridge stores only hashes of the invitation code and native browser session.
+It permits first enrollment only for an enabled non-admin user without existing
+credentials, bound to the redeemed session and the invitation deadline. A finish
+request reserves the grant atomically. Cancellation, invalid attestation or an
+ambiguous failure leaves it blocked: inspect live credential state before issuing
+a fresh invitation. Reissuing closes the previous grant; do not redeem the
+recipient's code yourself as a test. Registering a passkey does not implicitly
+change the MCP subject allowlist; include that explicit operator change when
+provisioning an account intended to use MCP.
+
+Public forwarding must always set an outgoing Cookie header from the current
+request, even when empty. A shared HTTPX client otherwise reuses another browser's
+cookies. Never fix this by clearing a shared cookie jar between requests.
+
 ## Auth constraints
 
 1. Client discovery/registration leads to `/bridge/authorize` with state, S256 PKCE, the MCP resource and `parking:read`.
 2. FastMCP creates the consent transaction and browser/CSRF state. The renderer only replaces successful HTML. Preserve cookies, error/redirect handling, double-submit CSRF and browser binding.
-3. The bridge starts native Pocket authorization using its own client, upstream state and PKCE. Pocket signs in the owner with a passkey.
-4. Pocket returns a code to `/auth/callback`. The bridge exchanges it and validates owner, client, scope and current native grant.
+3. The bridge starts native Pocket authorization using its own client, upstream state and PKCE. Pocket signs in an explicitly allowed user with a passkey.
+4. Pocket returns a code to `/auth/callback`. The bridge exchanges it and validates the allowed subject, client, scope and current native grant.
 5. Grok receives a downstream code, then exchanges it with its PKCE verifier. Pocket tokens remain server-side; Grok receives bridge tokens for `parking:read`.
 
 Bridge access lasts 300 seconds. Refresh reserves the previous pointer, checks the
