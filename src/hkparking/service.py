@@ -18,6 +18,7 @@ class CatalogSnapshot:
     cached_at: float
     fingerprint: str
     sources: tuple[str, ...]
+    source_status: dict | None = None
 
 
 def bounded_text(value, name, maximum, optional=False):
@@ -156,6 +157,7 @@ class ParkingService:
             "next_cursor": next_cursor,
             "catalog_fetched_at": snapshot.fetched_at.isoformat(),
             "source_urls": list(snapshot.sources),
+            "source_status": snapshot.source_status,
         }
 
     async def get_carpark_vacancies(self, carpark_ids: list[str], vehicle_type: str = "privateCar") -> dict:

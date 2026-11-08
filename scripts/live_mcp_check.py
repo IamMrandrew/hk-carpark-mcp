@@ -25,7 +25,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl
 
+from hkparking.app import build_app
 from hkparking.client import GovernmentClient
+from hkparking.combined_carparks import CombinedCarparkService
+from hkparking.config import ServerConfig
 from hkparking.metered import MeteredClient, MeteredParkingService
 from hkparking.service import ParkingService
 from hkparking.tools import register_tools
@@ -37,11 +40,17 @@ def main():
         "--use-env-proxy", action="store_true",
         help="Honor environment proxy/TLS settings for government requests in this smoke test only.",
     )
+    parser.add_argument("--hkemobility", action="store_true", help="Also test experimental WFS MCP tool")
+    parser.add_argument("--packaged-app", action="store_true", help="Use actual application factory with normal defaults")
     args = parser.parse_args()
+    if args.packaged_app:
+        args.hkemobility = True
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen()
     base = f"http://127.0.0.1:{listener.getsockname()[1]}"
+    public = "https://isolated-carpark.example.test" if args.packaged_app else base
+    host_headers = {"Host": "isolated-carpark.example.test"} if args.packaged_app else {}
     token = secrets.token_urlsafe(48)
     expiry = int(time.time()) + 600
 
@@ -54,12 +63,14 @@ def main():
                 client_id="local-live-verification",
                 scopes=["parking:read"],
                 expires_at=expiry,
-                resource=base + "/mcp",
+                resource=public + "/mcp",
             )
 
     # Never reuse a Grok/MCP-auth client for upstream requests.
     upstream_http = httpx.AsyncClient(trust_env=args.use_env_proxy, follow_redirects=False, timeout=10)
     service = ParkingService(GovernmentClient(upstream_http))
+    if args.hkemobility:
+        service = CombinedCarparkService(service)
     mcp = FastMCP(
         "Parking live verification",
         host="127.0.0.1",
@@ -91,12 +102,16 @@ def main():
                 await upstream_http.aclose()
 
     app.router.lifespan_context = lifespan
+    if args.packaged_app:
+        asyncio.run(upstream_http.aclose())
+        app = build_app(ServerConfig(issuer_url=public, public_origin=public,
+                                    listen_port=listener.getsockname()[1]), Verifier())
     server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False, proxy_headers=False))
     worker = threading.Thread(target=lambda: server.run(sockets=[listener]), daemon=True)
     worker.start()
 
     async def check():
-        async with httpx.AsyncClient(trust_env=False) as anonymous:
+        async with httpx.AsyncClient(trust_env=False, headers=host_headers) as anonymous:
             response = await anonymous.post(
                 base + "/mcp",
                 json={
@@ -113,7 +128,7 @@ def main():
             assert response.status_code == 401
         async with (
             httpx.AsyncClient(
-                trust_env=False, timeout=30, headers={"Authorization": "Bearer " + token}
+                trust_env=False, timeout=120, headers={**host_headers, "Authorization": "Bearer " + token}
             ) as authorized,
             streamable_http_client(base + "/mcp", http_client=authorized) as (read, write, _),
             ClientSession(read, write) as session,
@@ -130,6 +145,38 @@ def main():
                 assert result.structuredContent is not None
                 return result.structuredContent
 
+            if args.hkemobility:
+                for query in ("Globe", "Globe", "Tsuen Wan Plaza", "荃灣", "The One"):
+                    found = await call("search_parking", {"query": query, "parking_type": "carpark"})
+                    assert found["items"], f"Combined search empty: {query}"
+                    assert all("source_refs" in item and item["park_Id"] for item in found["items"])
+                    print(json.dumps({"event": "COMBINED_SEARCH_PASSED", "query": query,
+                                      "result": found}, ensure_ascii=False))
+                    if query in ("Globe", "The One"):
+                        chosen_source = next((v for v in found["items"]
+                            if v["source_refs"].get("hkemobility", {}).get("park_id")
+                            == ("911202" if query == "Globe" else "10015")), None)
+                        assert chosen_source is not None
+                        detail = await call("get_carpark_vacancies", {"carpark_ids": [chosen_source["park_Id"]]})
+                        item = detail["items"][0]
+                        assert item["status"] not in ("unavailable", "not_found")
+                        assert "hkemobility" in item["source_results"]
+                        assert all(request["status"] == 200 for request in item["source_results"]["hkemobility"]["requests"])
+                        if query == "Globe":
+                            assert item["records"] and all(r["current_count"] is None for r in item["records"])
+                        print(json.dumps({"event": "COMBINED_VACANCY_PASSED", "query": query,
+                                          "result": detail}, ensure_ascii=False))
+                plaza = await call("get_carpark_vacancies", {"carpark_ids": ["tdc327p1"]})
+                assert plaza["items"][0]["source_status"] == {"government": "ok", "hkemobility": "ok"}
+                assert plaza["items"][0]["conflicts"]
+                assert all(r["current_count"] is None for r in plaza["items"][0]["records"])
+                mixed = await call("get_carpark_vacancies", {"carpark_ids": ["hkemobility--911202", "tdc327p1", "100"]})
+                assert len(mixed["items"]) == 3
+                assert mixed["items"][2]["source_status"] == {"government": "ok"}
+                print(json.dumps({"event": "MIXED_SOURCE_BATCH_PASSED", "result": mixed}, ensure_ascii=False))
+                print(json.dumps({"event": "COMBINED_VACANCY_PASSED", "query": "Plaza", "result": plaza},
+                                 ensure_ascii=False))
+
             shared = await call("search_parking", {"query": "Tsuen Wan", "limit": 2})
             assert [row["parking_type"] for row in shared["items"]] == ["carpark", "metered"]
             exact_colloquial = await call("search_carparks", {"query": "荃灣多層停車場"})
@@ -141,7 +188,7 @@ def main():
                     "search_carparks", {"query": "荃灣", "limit": 2, "cursor": page["next_cursor"]}
                 )
                 items.extend(page["items"])
-            assert len(items) == broad["total"] == len({p["park_Id"] for p in items})
+            assert len(items) == broad["total"] == len({p.get("combined_id", p["park_Id"]) for p in items})
             # Explicit HUMAN/test-script selection, not server semantic resolution.
             chosen = next(p for p in items if p["park_Id"] == "tdcp3")
             assert chosen["name_zh"] == "荃灣停車場"
@@ -178,6 +225,7 @@ def main():
                         "event": "LIVE_MCP_CHECK_PASSED",
                         "verified_at": datetime.now(UTC).isoformat(),
                         "upstream_environment_settings": args.use_env_proxy,
+                        "packaged_app_default_wiring": args.packaged_app,
                         "auth": "401 without token; authenticated SDK initialize/list/call succeeded",
                         "shared_search_totals": shared["totals"],
                         "metered_search_total": meters["total"],

@@ -50,6 +50,7 @@ def build_app(
     token_verifier: TokenVerifier,
     *,
     upstream_transport: httpx.AsyncBaseTransport | None = None,
+    enable_hkemobility: bool = True,
 ) -> Starlette:
     """Build the resource server; upstream_transport is explicit synthetic-test injection."""
     if token_verifier is None or not callable(getattr(token_verifier, "verify_token", None)):
@@ -76,7 +77,11 @@ def build_app(
             validate_token_resource=True,
         ),
     )
-    register_tools(mcp, ParkingService(GovernmentClient(http)), MeteredParkingService(MeteredClient(http)))
+    service = ParkingService(GovernmentClient(http))
+    if enable_hkemobility:
+        from .combined_carparks import CombinedCarparkService
+        service = CombinedCarparkService(service)
+    register_tools(mcp, service, MeteredParkingService(MeteredClient(http)))
     app = mcp.streamable_http_app()
 
     @asynccontextmanager

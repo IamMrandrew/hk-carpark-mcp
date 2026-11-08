@@ -309,3 +309,18 @@ Evidence snapshot, not a guarantee of current runtime health:
 - Add dedicated DCR/settings-route and broader authenticated management UI coverage. Do not claim a working public admin UI.
 - Revoked-family retention/cleanup and upstream grant teardown remain open.
 - Dependency advisory review, native WAL visibility and least-privilege operational testing remain open. Do not equate passed functional tests with a completed security review.
+
+## Combined HKeMobility source
+
+Normal `build_app` startup additionally permits
+fixed HTTPS reads from `www.hkemobility.gov.hk`: the miniapp HTML/current audited
+bundle, bounded WFS, and `getCarparkFullDetail`. No arbitrary URLs, redirects,
+secret logging or automatic deployment. Government/metered clients retain their
+fixed destinations. `combined_carparks.py` requires complete count-bounded EN/TC
+catalogues and confirms matching identity by shared ID plus normalized name/address.
+Unknown identity matches remain separate. Search's raw source observations are not
+current availability. Pass returned `park_Id` unchanged to the existing vacancy tool; it routes both
+sources internally and uses PARK_ID detail when EPARK_ID is absent. Do not silently choose a source when opening states/counts
+conflict. The independent live smoke's `--packaged-app` flag exercises repeated calls
+and tears down the ephemeral loopback server. This does not validate Grok, public
+OAuth, Home Mac deployment, or an always-on service.
