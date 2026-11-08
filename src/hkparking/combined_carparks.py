@@ -202,7 +202,7 @@ class CombinedCarparkService(ParkingService):
         release_deferred = False
         try:
             ttl = self.catalog_ttl_seconds
-            if self._catalog and not (self._catalog.coverage or {}).get("complete", True):
+            if self._catalog and any(v != "ok" for v in (self._catalog.source_status or {}).values()):
                 ttl = min(ttl, 60)
             if self._catalog and self.monotonic() - self._catalog.cached_at < ttl:
                 return self._catalog
@@ -233,11 +233,8 @@ class CombinedCarparkService(ParkingService):
             items = union_items(government.items if government else (), wfs_items(languages))
             times = ([government.fetched_at] if government else []) + [datetime.fromisoformat(s["fetched_at"]) for s in sources]
             urls = (*(government.sources if government else ()), *(s["url"] for s in sources))
-            missing = [source for source, value in status.items() if value != "ok"]
-            coverage = {"complete": not missing, "missing_sources": missing,
-                        "total_scope": "available source identity records, not all Hong Kong facilities"}
             self._catalog = CatalogSnapshot(items, min(times), self.monotonic(), digest([items, status]),
-                                            urls, status, coverage)
+                                            urls, status)
             return self._catalog
         finally:
             if not release_deferred:
@@ -254,7 +251,7 @@ class CombinedCarparkService(ParkingService):
         for lookup_id in carpark_ids:
             item = known.get(lookup_id)
             if item is None:
-                items.append({"park_Id": lookup_id, "status": "not_found" if (snapshot.coverage or {}).get("complete", True)
+                items.append({"park_Id": lookup_id, "status": "not_found" if all(v == "ok" for v in (snapshot.source_status or {}).values())
                               else "unknown_catalogue_incomplete", "records": [],
                               "vehicle_type": vehicle_type})
                 continue
@@ -345,5 +342,4 @@ class CombinedCarparkService(ParkingService):
                 "source_url": next((u for u in snapshot.sources if u.startswith("https://api.data.gov.hk")), None),
                 "source_urls": list(snapshot.sources),
                 "catalogue_source_status": snapshot.source_status,
-                "coverage": snapshot.coverage or {"complete": True},
                 "disclaimer": "Source-specific observations are not guaranteed availability. Unknown is not zero; conflicts suppress current claims."}

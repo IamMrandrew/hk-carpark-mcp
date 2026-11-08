@@ -19,7 +19,6 @@ class CatalogSnapshot:
     fingerprint: str
     sources: tuple[str, ...]
     source_status: dict | None = None
-    coverage: dict | None = None
 
 
 def bounded_text(value, name, maximum, optional=False):
@@ -159,7 +158,6 @@ class ParkingService:
             "catalog_fetched_at": snapshot.fetched_at.isoformat(),
             "source_urls": list(snapshot.sources),
             "source_status": snapshot.source_status,
-            "coverage": snapshot.coverage or {"complete": True},
         }
 
     async def get_carpark_vacancies(self, carpark_ids: list[str], vehicle_type: str = "privateCar") -> dict:

@@ -534,7 +534,7 @@ def test_normal_factory_reports_partial_source_over_mcp(monkeypatch, failed_sour
                 assert not result["isError"]
                 output = result["structuredContent"]
                 assert output["items"]
-                assert output["complete"] is False
+                assert "coverage" not in output and "partial_results" not in output
+                assert "complete" not in output
                 assert output["source_status"]["carpark"][failed_source] == "unavailable"
-                assert output["coverage"]["carpark"]["missing_sources"] == [failed_source]
     asyncio.run(check())

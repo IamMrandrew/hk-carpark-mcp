@@ -88,7 +88,7 @@ def test_source_failure_not_partial_success():
         raise ProbeError('unavailable')
     result = asyncio.run(CombinedCarparkService(Government(), failed).search_carparks('One'))
     assert result['total'] == 1
-    assert result['coverage']['complete'] is False
+    assert 'coverage' not in result and 'partial_results' not in result
     assert result['source_status']['hkemobility'] == 'unavailable'
 
 
@@ -119,6 +119,8 @@ def test_unified_vacancy_routes_conflicts_and_failures():
     async def check():
         service = CombinedCarparkService(Gov(), loader, hkemobility=Hkem())
         result = await service.get_carpark_vacancies(['one', 'hkemobility--only', 'hkemobility--failed'])
+        assert 'coverage' not in result and 'partial_results' not in result
+        assert 'catalogue_source_status' in result
         merged, only, failed = result['items']
         assert merged['source_status'] == {'government': 'ok', 'hkemobility': 'ok'}
         assert merged['records'][0]['current_count'] is None
@@ -222,7 +224,8 @@ def test_government_catalogue_failure_retains_wfs():
         result = await service.search_carparks('One')
         assert result['total'] == 1
         assert result['items'][0]['sources'] == ['hkemobility']
-        assert result['coverage']['missing_sources'] == ['government']
+        assert result['source_status']['government'] == 'unavailable'
+        assert 'coverage' not in result and 'partial_results' not in result
         unknown = await service.get_carpark_vacancies(['one'])
         assert unknown['items'][0]['status'] == 'unknown_catalogue_incomplete'
     asyncio.run(check())
@@ -238,7 +241,7 @@ def test_both_catalogues_failed_errors():
         asyncio.run(CombinedCarparkService(FailedGovernment(), failed).catalog())
 
 
-def test_partial_cache_short_ttl_and_coverage_bound_cursor():
+def test_partial_cache_short_ttl_and_source_status_bound_cursor():
     clock = [0]
     calls = []
     def loader():
@@ -249,11 +252,11 @@ def test_partial_cache_short_ttl_and_coverage_bound_cursor():
     async def check():
         service = CombinedCarparkService(Government(), loader, monotonic=lambda: clock[0])
         partial = await service.catalog()
-        assert not partial.coverage['complete']
+        assert partial.source_status['hkemobility'] == 'unavailable'
         clock[0] = 59
         assert await service.catalog() is partial
         clock[0] = 61
         complete = await service.catalog()
-        assert complete.coverage['complete']
+        assert all(v == 'ok' for v in complete.source_status.values())
         assert complete.fingerprint != partial.fingerprint
     asyncio.run(check())

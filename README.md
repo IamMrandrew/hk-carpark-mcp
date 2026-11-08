@@ -141,8 +141,7 @@ signing material is extracted in memory, never saved or returned. Each source
 retains its observations/time. Unknown `-1` is not zero, capacity is not vacancy,
 and an unknown timezone suppresses current claims. Source conflicts or unavailable
 sources suppress current claims; raw observations remain for diagnosis. Partial
-vacancy results label failed sources explicitly. If one catalogue fails, search retains the healthy source with explicit incomplete
-coverage and per-source status; if both fail, search errors. Partial catalogue
+vacancy results label failed sources explicitly. If one catalogue fails, search retains the healthy source with per-source status; if both fail, search errors. Partial catalogue
 snapshots have a short retry window rather than the normal one-hour cache.
 
 The complete catalogue union does not prove coverage of every physical Hong Kong
