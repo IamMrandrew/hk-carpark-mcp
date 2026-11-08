@@ -86,8 +86,10 @@ def test_search_paging_and_cache():
 def test_source_failure_not_partial_success():
     def failed():
         raise ProbeError('unavailable')
-    with pytest.raises(UpstreamError):
-        asyncio.run(CombinedCarparkService(Government(), failed).catalog())
+    result = asyncio.run(CombinedCarparkService(Government(), failed).search_carparks('One'))
+    assert result['total'] == 1
+    assert result['coverage']['complete'] is False
+    assert result['source_status']['hkemobility'] == 'unavailable'
 
 
 def test_namespaced_id_bounded():
@@ -207,3 +209,51 @@ def test_wrong_detail_identity_not_combined(epark):
     assert row['source_status']['hkemobility'] == 'identity_mismatch'
     assert 'hkemobility' not in row['source_results']
     assert row['records'][0]['current_count'] is None
+
+
+def test_government_catalogue_failure_retains_wfs():
+    class FailedGovernment(Government):
+        async def catalog(self):
+            raise UpstreamError('offline')
+    def loader():
+        return {'EN': [feature()]}, [{'fetched_at': datetime.now(UTC).isoformat(), 'url': 'wfs'}], {}
+    async def check():
+        service = CombinedCarparkService(FailedGovernment(), loader)
+        result = await service.search_carparks('One')
+        assert result['total'] == 1
+        assert result['items'][0]['sources'] == ['hkemobility']
+        assert result['coverage']['missing_sources'] == ['government']
+        unknown = await service.get_carpark_vacancies(['one'])
+        assert unknown['items'][0]['status'] == 'unknown_catalogue_incomplete'
+    asyncio.run(check())
+
+
+def test_both_catalogues_failed_errors():
+    class FailedGovernment(Government):
+        async def catalog(self):
+            raise UpstreamError('offline')
+    def failed():
+        raise ProbeError('offline')
+    with pytest.raises(UpstreamError):
+        asyncio.run(CombinedCarparkService(FailedGovernment(), failed).catalog())
+
+
+def test_partial_cache_short_ttl_and_coverage_bound_cursor():
+    clock = [0]
+    calls = []
+    def loader():
+        calls.append(True)
+        if len(calls) == 1:
+            raise ProbeError('offline')
+        return {'EN': [feature()]}, [{'fetched_at': datetime.now(UTC).isoformat(), 'url': 'wfs'}], {}
+    async def check():
+        service = CombinedCarparkService(Government(), loader, monotonic=lambda: clock[0])
+        partial = await service.catalog()
+        assert not partial.coverage['complete']
+        clock[0] = 59
+        assert await service.catalog() is partial
+        clock[0] = 61
+        complete = await service.catalog()
+        assert complete.coverage['complete']
+        assert complete.fingerprint != partial.fingerprint
+    asyncio.run(check())

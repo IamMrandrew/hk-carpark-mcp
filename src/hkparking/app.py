@@ -50,7 +50,7 @@ def build_app(
     token_verifier: TokenVerifier,
     *,
     upstream_transport: httpx.AsyncBaseTransport | None = None,
-    enable_hkemobility: bool = False,
+    enable_hkemobility: bool = True,
 ) -> Starlette:
     """Build the resource server; upstream_transport is explicit synthetic-test injection."""
     if token_verifier is None or not callable(getattr(token_verifier, "verify_token", None)):

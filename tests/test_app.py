@@ -44,9 +44,10 @@ class FixtureVerifier(TokenVerifier):
 
 def factory():
     assert importlib.util.find_spec("hkparking.app"), "Production parking app factory is missing"
-    from hkparking.app import build_app
+    from functools import partial
 
-    return build_app
+    from hkparking.app import build_app
+    return partial(build_app, enable_hkemobility=False)
 
 
 def no_upstream(request):
@@ -479,4 +480,61 @@ def test_official_sdk_client_over_real_loopback_socket():
         assert upstream.close_loops == [serving_loop]
         assert all(loop is serving_loop for loop in upstream.request_loops)
 
+    asyncio.run(check())
+
+
+def test_normal_app_factory_uses_combined_service(monkeypatch):
+    from hkparking import app as module
+    from hkparking.combined_carparks import CombinedCarparkService
+    seen = []
+    original = module.register_tools
+    def capture(mcp, service, metered):
+        seen.append(service)
+        original(mcp, service, metered)
+    monkeypatch.setattr(module, "register_tools", capture)
+    app = module.build_app(ServerConfig(issuer_url=ISSUER), FixtureVerifier(),
+                           upstream_transport=httpx.MockTransport(no_upstream))
+    assert isinstance(seen[0], CombinedCarparkService)
+    async def close():
+        async with app.router.lifespan_context(app):
+            pass
+    asyncio.run(close())
+
+
+@pytest.mark.parametrize("failed_source", ["government", "hkemobility"])
+def test_normal_factory_reports_partial_source_over_mcp(monkeypatch, failed_source):
+    from datetime import UTC, datetime
+
+    from hkparking.app import build_app
+    from hkparking.combined_carparks import HKeMobilityCatalogClient
+    from hkparking.hkemobility_source import ProbeError
+
+    def catalogue(_):
+        if failed_source == "hkemobility":
+            raise ProbeError("synthetic source outage")
+        return {"EN": [{"properties": {"PARK_ID": "fixture", "EPARK_ID": None,
+                "NAME": "Synthetic source-only park", "DISPLAY_ADDRESS": "1 Synthetic Road"}}]}, [
+            {"fetched_at": datetime.now(UTC).isoformat(), "url": "https://www.hkemobility.gov.hk/"}], {}
+
+    monkeypatch.setattr(HKeMobilityCatalogClient, "catalog", catalogue)
+    upstream = (httpx.MockTransport(lambda _: httpx.Response(503))
+                if failed_source == "government" else FixtureGovernmentTransport())
+    app = build_app(ServerConfig(issuer_url=ISSUER), FixtureVerifier(), upstream_transport=upstream)
+
+    async def check():
+        async with app.router.lifespan_context(app), httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url=PUBLIC,
+            headers={"authorization": "Bearer synthetic-valid"},
+        ) as http:
+            await rpc(http, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
+                "clientInfo": {"name": "partial-source-fixture", "version": "1"}})
+            for _ in range(2):
+                result = await rpc(http, "tools/call", {"name": "search_parking",
+                    "arguments": {"query": "Synthetic", "parking_type": "carpark"}})
+                assert not result["isError"]
+                output = result["structuredContent"]
+                assert output["items"]
+                assert output["complete"] is False
+                assert output["source_status"]["carpark"][failed_source] == "unavailable"
+                assert output["coverage"]["carpark"]["missing_sources"] == [failed_source]
     asyncio.run(check())

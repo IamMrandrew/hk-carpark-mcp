@@ -201,9 +201,18 @@ class CombinedCarparkService(ParkingService):
         await self._lock.acquire()
         release_deferred = False
         try:
-            if self._catalog and self.monotonic() - self._catalog.cached_at < self.catalog_ttl_seconds:
+            ttl = self.catalog_ttl_seconds
+            if self._catalog and not (self._catalog.coverage or {}).get("complete", True):
+                ttl = min(ttl, 60)
+            if self._catalog and self.monotonic() - self._catalog.cached_at < ttl:
                 return self._catalog
-            government = await self.government.catalog()
+            status = {"government": "ok", "hkemobility": "ok"}
+            government = None
+            try:
+                government = await self.government.catalog()
+            except UpstreamError:
+                status["government"] = "unavailable"
+            languages, sources = {}, []
             task = asyncio.create_task(asyncio.to_thread(self.catalog_loader))
             try:
                 languages, sources, _ = await asyncio.shield(task)
@@ -217,12 +226,18 @@ class CombinedCarparkService(ParkingService):
 
                 task.add_done_callback(finished)
                 raise
-            except (ProbeError, ValueError, TypeError, KeyError) as error:
-                raise UpstreamError("Combined search unavailable: HKeMobility catalogue incomplete or unavailable") from error
-            items = union_items(government.items, wfs_items(languages))
-            fetched_at = min(government.fetched_at, *(datetime.fromisoformat(s["fetched_at"]) for s in sources))
-            self._catalog = CatalogSnapshot(items, fetched_at, self.monotonic(), digest(items),
-                                            (*government.sources, *(s["url"] for s in sources)))
+            except (ProbeError, UpstreamError, ValueError, TypeError, KeyError):
+                status["hkemobility"] = "unavailable"
+            if all(value == "unavailable" for value in status.values()):
+                raise UpstreamError("Combined search unavailable: both catalogues unavailable")
+            items = union_items(government.items if government else (), wfs_items(languages))
+            times = ([government.fetched_at] if government else []) + [datetime.fromisoformat(s["fetched_at"]) for s in sources]
+            urls = (*(government.sources if government else ()), *(s["url"] for s in sources))
+            missing = [source for source, value in status.items() if value != "ok"]
+            coverage = {"complete": not missing, "missing_sources": missing,
+                        "total_scope": "available source identity records, not all Hong Kong facilities"}
+            self._catalog = CatalogSnapshot(items, min(times), self.monotonic(), digest([items, status]),
+                                            urls, status, coverage)
             return self._catalog
         finally:
             if not release_deferred:
@@ -239,7 +254,8 @@ class CombinedCarparkService(ParkingService):
         for lookup_id in carpark_ids:
             item = known.get(lookup_id)
             if item is None:
-                items.append({"park_Id": lookup_id, "status": "not_found", "records": [],
+                items.append({"park_Id": lookup_id, "status": "not_found" if (snapshot.coverage or {}).get("complete", True)
+                              else "unknown_catalogue_incomplete", "records": [],
                               "vehicle_type": vehicle_type})
                 continue
             result = {**copy.deepcopy(item), "records": [], "vehicle_type": vehicle_type,
@@ -328,4 +344,6 @@ class CombinedCarparkService(ParkingService):
         return {"items": items, "fetched_at": datetime.now(UTC).isoformat(),
                 "source_url": next((u for u in snapshot.sources if u.startswith("https://api.data.gov.hk")), None),
                 "source_urls": list(snapshot.sources),
+                "catalogue_source_status": snapshot.source_status,
+                "coverage": snapshot.coverage or {"complete": True},
                 "disclaimer": "Source-specific observations are not guaranteed availability. Unknown is not zero; conflicts suppress current claims."}

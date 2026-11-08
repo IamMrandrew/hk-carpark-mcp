@@ -67,6 +67,9 @@ class ParkingSearchService:
                 kind: snapshot.fetched_at.isoformat() for kind, snapshot in snapshots.items()
             },
             "source_urls": [url for snapshot in snapshots.values() for url in snapshot.sources],
+            "source_status": {kind: snapshot.source_status for kind, snapshot in snapshots.items()},
+            "coverage": {kind: snapshot.coverage or {"complete": True} for kind, snapshot in snapshots.items()},
+            "complete": all((snapshot.coverage or {}).get("complete", True) for snapshot in snapshots.values()),
             "ordering": "Alternate carpark then metered, each in exact source-ID order; continue the remaining type when one ends.",
             "disclaimer": "Search gives locations, not availability or permission to park. Use the matching availability tool and check signs.",
         }

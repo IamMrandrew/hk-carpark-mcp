@@ -109,12 +109,13 @@ host still uses its earlier launcher. Some auth hardening work remains.
 
 To run the checks: `uv run pytest -q` and `uv run ruff check src tests`.
 
-## Experimental combined carpark flow (isolated testing)
+## Combined carpark flow
 
-Enable `build_app(..., enable_hkemobility=True)` to include HKeMobility in the
+Normal application startup includes HKeMobility in the
 existing `search_parking`, `search_carparks` and `get_carpark_vacancies` flow.
 There are still five MCP tools, not an additional source-specific tool. Metered
-parking keeps its existing separate lookup. Normal startup remains unchanged.
+parking keeps its existing separate lookup. Programmatic callers may explicitly use
+`build_app(..., enable_hkemobility=False)` for government-only compatibility.
 
 Search joins complete bounded government and HKeMobility EN/TC catalogues.
 Shared IDs plus matching normalized name/address confirm a merge; ambiguous
@@ -127,10 +128,11 @@ prefixes. Search observations are not current availability.
 Run the temporary authenticated loopback end-to-end smoke:
 
 ```sh
-uv run python scripts/live_mcp_check.py --hkemobility
+uv run python scripts/live_mcp_check.py --packaged-app
 ```
 
-It tests repeated search → vacancy calls and shuts down afterwards. It does not
+It uses the actual application factory with normal defaults, tests repeated
+search → vacancy calls, and shuts down afterwards. It does not
 register a Grok connector, deploy, or use production identity state.
 
 The unsupported website contract may change. Fixed HTTPS destinations, response
@@ -139,8 +141,9 @@ signing material is extracted in memory, never saved or returned. Each source
 retains its observations/time. Unknown `-1` is not zero, capacity is not vacancy,
 and an unknown timezone suppresses current claims. Source conflicts or unavailable
 sources suppress current claims; raw observations remain for diagnosis. Partial
-vacancy results label failed sources explicitly. A failed catalogue fetch fails
-combined search rather than silently presenting incomplete coverage.
+vacancy results label failed sources explicitly. If one catalogue fails, search retains the healthy source with explicit incomplete
+coverage and per-source status; if both fail, search errors. Partial catalogue
+snapshots have a short retry window rather than the normal one-hour cache.
 
 The complete catalogue union does not prove coverage of every physical Hong Kong
 carpark, production reliability, or long-term stability. Cached catalogues expire
