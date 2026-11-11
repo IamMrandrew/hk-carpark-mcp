@@ -13,15 +13,30 @@ from fastmcp.server.auth import OAuthProxy
 from fastmcp.server.auth import TokenVerifier as UpstreamVerifier
 from key_value.aio.stores.disk import DiskStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.server.auth.provider import AccessToken, AuthorizeError, RefreshToken, TokenError, TokenVerifier
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizeError,
+    RefreshToken,
+    RegistrationError,
+    TokenError,
+    TokenVerifier,
+)
 
 from hkparking.deployment import SETTINGS
 
+from .client_registration import ExactDCRClient, client_redirect_allowed, validate_metadata
 from .ledger import Ledger, LimitReached
 
 PUBLIC = SETTINGS.public_origin
 RESOURCE = PUBLIC + '/mcp'
 CALLBACK = SETTINGS.client_redirect_uri
+# Registration validates public HTTPS URIs; each client enforces exact matching.
+CLIENT_REDIRECT_PATTERNS = None
+
+# Compatibility re-export for the ingress policy.
+__all__ = ['client_redirect_allowed']
+
+
 SCOPE = ['parking:read']
 REVOCATION_LOOKUP = ContextVar('revocation_lookup',default=False)
 CAPACITY_EXCEEDED = ContextVar('capacity_exceeded',default=False)
@@ -102,8 +117,9 @@ class Bridge(OAuthProxy):
     async def authorize(self,client,params):
         # SDK has already validated the client/request before calling this hook.
         # Also fail closed for callers that invoke the provider directly.
-        if (await self.get_client(client.client_id) is None or params.scopes!=SCOPE
-                or str(params.redirect_uri)!=CALLBACK or str(params.resource)!=RESOURCE
+        registered = await self.get_client(client.client_id)
+        if (registered is None or params.scopes!=SCOPE
+                or not client_redirect_allowed(str(params.redirect_uri)) or str(params.redirect_uri) not in [str(uri) for uri in (registered.redirect_uris or [])] or str(params.resource)!=RESOURCE
                 or not params.code_challenge):
             raise AuthorizeError('invalid_request','Authorization request rejected')
         try:
@@ -113,15 +129,38 @@ class Bridge(OAuthProxy):
             raise
 
     async def register_client(self,client_info):
+        try:
+            data = client_info.model_dump(mode='json', exclude_none=True,
+                exclude={'client_id', 'client_secret', 'client_id_issued_at', 'client_secret_expires_at'})
+            normalized = validate_metadata(data)
+            if not client_info.client_id:
+                raise ValueError('client_id is required')
+            method = normalized['token_endpoint_auth_method']
+            if method != 'none' and not client_info.client_secret:
+                raise ValueError('Confidential clients require a secret')
+        except (ValueError, TypeError):
+            raise RegistrationError('invalid_client_metadata', 'Invalid client metadata; HTTPS callbacks and authorization_code plus refresh_token required') from None
         expired = self.ledger.admit('registration',client_info.client_id,16,86400)
         for client in expired:
             await self._client_store.delete(key=client)
-        await super().register_client(client_info)
+        # OAuthProxy.register_client silently replaces all methods/secrets with
+        # none/None. Persist the actual SDK registration response instead.
+        stored = ExactDCRClient(**client_info.model_dump(exclude={'token_endpoint_auth_method', 'scope'}),
+                                token_endpoint_auth_method=method,
+                                scope=client_info.scope or 'parking:read',
+                                allowed_redirect_uri_patterns=[str(uri) for uri in client_info.redirect_uris])
+        await self._client_store.put(key=client_info.client_id, value=stored)
 
     async def get_client(self,client_id):
         if not self.ledger.registered(client_id):
             return None
-        return await super().get_client(client_id)
+        client = await super().get_client(client_id)
+        if client is not None:
+            # OAuthProxy otherwise permits any provider-wide pattern, even if
+            # this particular DCR client registered a different callback.
+            client = ExactDCRClient(**client.model_dump())
+            client.allowed_redirect_uri_patterns = [str(uri) for uri in (client.redirect_uris or [])]
+        return client
 
     def pointer(self,token,kind='access'):
         try:
@@ -290,7 +329,7 @@ def make_provider(directory, *, token_verifier, upstream_authorization_endpoint,
         upstream_client_secret=upstream_client_secret,
         token_verifier=token_verifier,
         base_url=PUBLIC, client_storage=store, jwt_signing_key=signing,
-        allowed_client_redirect_uris=[CALLBACK], valid_scopes=SCOPE,
+        allowed_client_redirect_uris=CLIENT_REDIRECT_PATTERNS, valid_scopes=SCOPE,
         enable_cimd=False, require_authorization_consent=True,
         fastmcp_access_token_expiry_seconds=300,
         fallback_refresh_token_expiry_seconds=3600,

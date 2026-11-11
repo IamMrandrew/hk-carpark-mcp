@@ -347,8 +347,13 @@ class PocketBridge(Bridge):
                     data = metadata.model_dump(mode='json',exclude_none=True)
                     data['authorization_endpoint'] = PUBLIC+'/bridge/authorize'
                     data['scopes_supported'] = SCOPE
+                    data['token_endpoint_auth_methods_supported'] = ['none','client_secret_post','client_secret_basic']
                     return JSONResponse(data,headers={'Cache-Control':'no-store'})
                 result.append(Route(route.path,discovery,methods=['GET','OPTIONS']))
+                # This origin is the downstream OAuth issuer. Do not expose the
+                # upstream Pocket OIDC contract here: clients otherwise discover
+                # native scopes/endpoints that cannot serve downstream grants.
+                result.append(Route('/.well-known/openid-configuration',discovery,methods=['GET','OPTIONS']))
             else:
                 result.append(route)
         return result
@@ -512,6 +517,8 @@ def build_integration(directory,config,client_secret,*,pocket_transport=None):
 
     app.router.routes.append(Route('/{rest:path}',pocket,methods=['GET','POST']))
     # Existing Host/Origin boundary MUST stay outermost before any state/network work.
+    from .oauth_diagnostics import OAuthDiagnostics
+    app.user_middleware.append(Middleware(OAuthDiagnostics,path=Path(directory)/'oauth-metadata.jsonl'))
     app.user_middleware.append(Middleware(IntegrationPolicy,provider=provider))
     original=app.router.lifespan_context
     @asynccontextmanager
