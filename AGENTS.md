@@ -46,7 +46,7 @@ separate process for each deployment. The entry point does not load `.env` files
 Use the README startup command and source only a trusted private environment file.
 
 - `CARPARK_PUBLIC_ORIGIN`: canonical HTTPS origin, without credentials, path, query, fragment or trailing slash. Startup requires it explicitly.
-- `CARPARK_CLIENT_REDIRECT_URI`: one exact canonical HTTPS client callback; no wildcard, credentials or fragment. The default is Grok's official callback.
+- `CARPARK_CLIENT_REDIRECT_URI`: legacy/default callback retained for configuration compatibility and fixtures; no longer a platform allowlist. DCR validates public HTTPS web redirects dynamically, then enforces exact per-client binding, including query strings. HTTP/native app callbacks and CIMD are not implemented by this bridge.
 - `CARPARK_DISPLAY_NAME`, `CARPARK_SHORT_NAME`, `CARPARK_ICON_TEXT`: heading, short label and one-character icon. Request/config labels are HTML-escaped.
 - `CARPARK_LISTEN_PORT`, `CARPARK_POCKET_PORT`: valid TCP ports; defaults `8767` and `14110`. Listen host remains `127.0.0.1`.
 - `CARPARK_STATE_DIR`, `CARPARK_POCKET_DATABASE`, `CARPARK_POCKET_CLIENT_SECRET_FILE`: absolute canonical paths. Reuse existing state and secret files during migration.
@@ -305,7 +305,7 @@ Evidence snapshot, not a guarantee of current runtime health:
 
 - Anonymous DCR quota (16 registrations/24h) can be exhausted; keep this visible in review.
 - Settings UI links do not imply supported management APIs. `/api/users/me` hits an earlier GET-only rule, making its later PUT rule unreachable. Catch-all GET/POST routing prevents allowed PATCH/DELETE actions.
-- Reauthenticate/error methods are too broad; login/start permits POST even though the native route defines GET. A stale DCR comment says only `none`, but code also accepts `client_secret_post`.
+- Reauthenticate/error methods are too broad; login/start permits POST even though the native route defines GET.
 - Add dedicated DCR/settings-route and broader authenticated management UI coverage. Do not claim a working public admin UI.
 - Revoked-family retention/cleanup and upstream grant teardown remain open.
 - Dependency advisory review, native WAL visibility and least-privilege operational testing remain open. Do not equate passed functional tests with a completed security review.

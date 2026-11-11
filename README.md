@@ -78,6 +78,12 @@ must not advertise Pocket's upstream OIDC scopes or UserInfo endpoint. This
 bridge provides OAuth, not downstream OIDC: leave OIDC disabled in manual client
 settings. Passkey login through Pocket continues to work upstream.
 
+DCR supports `none`, `client_secret_post` and `client_secret_basic`. It requires
+both `authorization_code` and `refresh_token` grants, S256 PKCE, the MCP resource
+and `parking:read`. Supported callbacks are public HTTPS web URLs, not native
+app schemes or HTTP loopback URLs. Existing registration/transaction quotas
+remain in place; dynamic registration does not grant user access.
+
 DCR is supported; CIMD and RFC 9207 issuer-response identification are not
 advertised by this version. Do not claim full client compatibility until the
 actual client's linking flow has succeeded. If a client cached older discovery
