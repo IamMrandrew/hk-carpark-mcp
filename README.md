@@ -64,6 +64,34 @@ Approve the Carpark request, then sign in with your Pocket ID passkey.
 Grok handles token refresh. In the tested setup, each successful refresh renews a
 30-day window; you should not need to sign in each day.
 
+## Connect ChatGPT and other OAuth MCP clients
+
+Use the same `/mcp` URL, OAuth and `parking:read` scope. Dynamic client
+registration learns validated HTTPS web callbacks; no platform-specific callback
+allowlist or per-connector code change is required. Every authorization and code
+exchange is still bound to the exact redirect registered by that client, with
+S256 PKCE, user consent and the separate user access policy enforced.
+
+Discovery at `/.well-known/oauth-authorization-server` and
+`/.well-known/openid-configuration` describes the same downstream bridge. It
+must not advertise Pocket's upstream OIDC scopes or UserInfo endpoint. This
+bridge provides OAuth, not downstream OIDC: leave OIDC disabled in manual client
+settings. Passkey login through Pocket continues to work upstream.
+
+DCR supports `none`, `client_secret_post` and `client_secret_basic`. It requires
+both `authorization_code` and `refresh_token` grants, S256 PKCE, the MCP resource
+and `parking:read`. Supported callbacks are public HTTPS web URLs, not native
+app schemes or HTTP loopback URLs. Existing registration/transaction quotas
+remain in place; dynamic registration does not grant user access.
+
+DCR is supported; CIMD and RFC 9207 issuer-response identification are not
+advertised by this version. Do not claim full client compatibility until the
+actual client's linking flow has succeeded. If a client cached older discovery
+or manual OIDC settings, create a fresh connection to rediscover the contract.
+
+References: [OpenAI authentication](https://developers.openai.com/apps-sdk/build/auth/),
+[MCP client registration](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration).
+
 ## Invite another user
 
 Create an ordinary user through Pocket's private admin interface, then issue a

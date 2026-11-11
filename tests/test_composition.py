@@ -29,7 +29,7 @@ def test_composition_discovery_routes_boundary_and_registration(tmp_path):
             assert discovery['revocation_endpoint']==PUBLIC+'/revoke'
             assert discovery['scopes_supported']==['parking:read']
             assert not discovery.get('client_id_metadata_document_supported',False)
-            assert (await c.get('/.well-known/openid-configuration')).json()['authorization_endpoint']==PUBLIC+'/authorize'
+            assert (await c.get('/.well-known/openid-configuration')).json()['authorization_endpoint']==PUBLIC+'/bridge/authorize'
             assert (await c.get('/')).json()['owner']=='pocket'
             assert (await c.get('/api/webauthn/login/start')).status_code==200
             for path in ['/setup','/setup/','/signup','/lc/a','/settings/admin','/api/users','/api/users/initial','/api/oidc/clients','/api/one-time-access-token','/api/oidc/par','/api/oidc/device/authorize','/api/unknown']:

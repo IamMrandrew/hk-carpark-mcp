@@ -1,12 +1,15 @@
 """Narrow ingress policy, not OAuth protocol implementation (library owns grants)."""
 import asyncio
+import base64
+import binascii
 import json
 import re
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, unquote, urlencode
 
 from starlette.responses import JSONResponse
 
-from .bridge import CALLBACK, CAPACITY_EXCEEDED, RESOURCE, REVOCATION_LOOKUP
+from .bridge import CAPACITY_EXCEEDED, RESOURCE, REVOCATION_LOOKUP, client_redirect_allowed
+from .client_registration import validate_metadata
 from .ledger import LimitReached
 
 OAUTH = {'/authorize','/token','/register','/consent','/auth/callback','/revoke'}
@@ -39,26 +42,42 @@ class Policy:
             return await reject(408)
         path = scope['path']
         try:
+            if path in {'/token', '/revoke'} and scope['method'] == 'POST':
+                auth = [value for key, value in scope.get('headers', []) if key.lower() == b'authorization']
+                if len(auth) == 1 and auth[0].startswith(b'Basic '):
+                    try:
+                        decoded = base64.b64decode(auth[0][6:], validate=True).decode('utf-8')
+                        identifier, _secret = decoded.split(':', 1)
+                        identifier = unquote(identifier)
+                    except (ValueError, UnicodeDecodeError, binascii.Error):
+                        return await reject(401, 'invalid_client')
+                    fields = parse_qsl(body.decode('utf-8'), keep_blank_values=True, max_num_fields=24)
+                    if not any(key == 'client_id' for key, _ in fields):
+                        body = urlencode([*fields, ('client_id', identifier)]).encode()
             if path == '/register' and scope['method'] == 'POST':
-                pairs = json.loads(body,object_pairs_hook=lambda p:p)
-                # Only flat reviewed metadata; nested redirects/grants/response lists remain lists.
-                data = dict(pairs)
-                if len(data)!=len(pairs) or set(data)-{'redirect_uris','token_endpoint_auth_method','grant_types','response_types','scope','client_name'}:
-                    return await reject()
-                if data.get('redirect_uris') != [CALLBACK] or data.get('scope') not in (None,'parking:read') or data.get('token_endpoint_auth_method') not in ('none','client_secret_post') or data.get('grant_types') != ['authorization_code','refresh_token'] or data.get('response_types') != ['code'] or not isinstance(data.get('client_name',''),str) or len(data.get('client_name',''))>80:
-                    return await reject()
+                def unique_object(pairs):
+                    data = dict(pairs)
+                    if len(data) != len(pairs):
+                        raise ValueError('Duplicate metadata')
+                    return data
+                try:
+                    data = validate_metadata(json.loads(body, object_pairs_hook=unique_object))
+                except (ValueError, TypeError):
+                    return await reject(error='invalid_client_metadata')
+                # RFC7591 defaults to basic, unlike the pinned SDK's post default.
+                body = json.dumps(data).encode()
             elif path in {'/authorize','/token'}:
                 pairs = parse_qsl((scope['query_string'] if scope['method']=='GET' else body).decode('utf-8'),keep_blank_values=True, max_num_fields=24)
                 data = dict(pairs)
                 if len(data)!=len(pairs) or data.get('resource') != RESOURCE:
                     return await reject()
                 if path=='/authorize':
-                    if data.get('scope')!='parking:read' or data.get('redirect_uri')!=CALLBACK or data.get('code_challenge_method')!='S256' or not re.fullmatch(r'[A-Za-z0-9_-]{43}',data.get('code_challenge','')) or not 1 <= len(data.get('state','')) <= 256:
+                    if data.get('scope')!='parking:read' or not client_redirect_allowed(data.get('redirect_uri')) or data.get('code_challenge_method')!='S256' or not re.fullmatch(r'[A-Za-z0-9_-]{43}',data.get('code_challenge','')) or not 1 <= len(data.get('state','')) <= 256:
                         return await reject()
                 else:
                     if data.get('grant_type') not in {'authorization_code','refresh_token'} or data.get('scope','parking:read')!='parking:read':
                         return await reject()
-                    if data['grant_type']=='authorization_code' and data.get('redirect_uri')!=CALLBACK:
+                    if data['grant_type']=='authorization_code' and not client_redirect_allowed(data.get('redirect_uri')):
                         return await reject()
             elif path=='/revoke' and scope['method']=='POST':
                 pairs = parse_qsl(body.decode('utf-8'),keep_blank_values=True,max_num_fields=8)
@@ -66,7 +85,7 @@ class Policy:
                 if len(data)!=len(pairs):
                     return await reject()
                 # MCP SDK 1.30 RevocationRequest incorrectly requires this field even
-                # for public clients. DCR admits ONLY 'none'; authentication is still
+                # for public clients. Authentication for all DCR methods is still
                 # performed by the unchanged SDK handler, never bypassed here.
                 data.setdefault('client_secret','')
                 body = urlencode(data).encode()

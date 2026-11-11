@@ -19,7 +19,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlsplit
 
 import httpx
 import pytest
@@ -108,13 +108,35 @@ def native_fixture(home):
             process.wait(timeout=5)
 
 
-async def sign_in(http):
-    metadata = {'redirect_uris': [SETTINGS.client_redirect_uri],
-                'token_endpoint_auth_method': 'none', 'scope': 'parking:read',
+class RegisteredClientAuth(httpx.Auth):
+    """Only attach synthetic DCR credentials to downstream grant endpoints."""
+    def __init__(self, method, client, secret):
+        self.method, self.client, self.secret = method, client, secret
+
+    def auth_flow(self, request):
+        if request.url.path in {'/token','/revoke'} and str(request.url).startswith(PUBLIC+'/'):
+            if self.method == 'client_secret_basic':
+                request.headers['Authorization'] = 'Basic '+base64.b64encode(
+                    (self.client+':'+self.secret).encode()).decode()
+            elif self.method == 'client_secret_post':
+                data = dict(parse_qsl(request.content.decode(),keep_blank_values=True))
+                data['client_secret'] = self.secret
+                headers = dict(request.headers)
+                headers.pop('content-length',None)
+                request = httpx.Request(request.method,request.url,headers=headers,
+                                        data=data,extensions=request.extensions)
+        yield request
+
+
+async def sign_in(http, callback=SETTINGS.client_redirect_uri, auth_method='none'):
+    metadata = {'redirect_uris': [callback],
+                'token_endpoint_auth_method': auth_method, 'scope': 'parking:read',
                 'grant_types': ['authorization_code', 'refresh_token'], 'response_types': ['code']}
     response = await http.post('/register', json=metadata)
     assert response.status_code == 201
-    client = response.json()['client_id']
+    info = response.json()
+    client = info['client_id']
+    http.auth = RegisteredClientAuth(auth_method,client,info.get('client_secret'))
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     response = await http.get('/bridge/authorize', params={
@@ -167,7 +189,13 @@ def private_native_root(tmp_path):
 
 
 @pytest.mark.parametrize('additional_user', [False, True])
-def test_real_native_refresh_expiry_rotation_and_restart(private_native_root, additional_user):
+@pytest.mark.parametrize('callback,auth_method', [
+    (SETTINGS.client_redirect_uri,'client_secret_post'),
+    ('https://chatgpt.com/connector_platform_oauth_redirect','none'),
+    ('https://chatgpt.com/connector/oauth/SYNTHETIC-callback-123','client_secret_post'),
+    ('https://synthetic-new-client.example.test/oauth/callback','client_secret_basic'),
+])
+def test_real_native_refresh_expiry_rotation_and_restart(private_native_root, additional_user, callback, auth_method):
     tmp_path = private_native_root
     with native_fixture(tmp_path / 'native') as fixture:
         path = fixture['database']
@@ -187,7 +215,8 @@ def test_real_native_refresh_expiry_rotation_and_restart(private_native_root, ad
             government_verified = False
             async with app.router.lifespan_context(app), httpx.AsyncClient(
                     transport=httpx.ASGITransport(app), base_url=PUBLIC, cookies=fixture['cookies']) as http:
-                client, tokens = await sign_in(http)
+                client, tokens = await sign_in(http, callback, auth_method)
+                registered_auth = http.auth
                 p = app.state.provider
                 claims = p.jwt_issuer.verify_token(tokens['refresh_token'], expected_token_use='refresh')
                 assert claims['exp'] - time.time() > 86400, 'real native lifetime truncated to one hour'
@@ -218,7 +247,7 @@ def test_real_native_refresh_expiry_rotation_and_restart(private_native_root, ad
             # New provider, disk stores, native verifier and HTTP clients; same saved grant.
             app = new_app()
             async with app.router.lifespan_context(app), httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app), base_url=PUBLIC) as http:
+                    transport=httpx.ASGITransport(app), base_url=PUBLIC,auth=registered_auth) as http:
                 for _ in range(3):
                     response = await http.post('/token', data={
                         'grant_type': 'refresh_token', 'client_id': client, 'refresh_token': tokens['refresh_token'],
